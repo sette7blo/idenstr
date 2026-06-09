@@ -1,113 +1,100 @@
 # Idenstr
 
-Self-hosted Nostr identity dashboard for managing one primary identity, profile, following list, relay state, private event vault, and backups.
+Self-hosted Nostr identity dashboard. Own your profile, following list, relay policy, and backups — without trusting a third-party client or cloud service.
 
-Read `AGENT.md` before implementation work.
+Idenstr is the first module of the [*str stack](https://github.com/sette7blo): a sovereignty-focused, modular Nostr ecosystem inspired by the *arr stack (Sonarr, Radarr, etc.) but built for Nostr identity and data ownership.
 
-## Current build
+## What it does
 
-This is the first runnable Idenstr skeleton:
+- **Identity** — import an existing Nostr keypair or generate a new one
+- **Profile** — edit and publish your kind:0 profile, compare state across relays
+- **Following** — manage your kind:3 contact list as an intentional address book
+- **Relays** — manage your kind:10002 relay list, see which relays are current/stale/missing
+- **Private vault** — keep a canonical local copy of all your signed events
+- **Backups** — export and restore your identity, profile, following list, and relay config
+- **API tokens** — scoped tokens for connecting other *str apps (Feedstr, Relaystr, etc.)
 
-- dependency-free Node 22 app/API
-- mysterious sovereign cyberpunk dashboard UI
-- system/capabilities/health API endpoints
-- interactive dashboard for profile drafts, profile truth scans, enriched following directory, following entries, relay policy, relay scans, follow-based relay popularity, top missing relay suggestions, backups, and audit state
-- scoped API token creation/list/revocation
-- Docker image release path
-- iOS/PWA installability path
+Idenstr is not a Nostr client. It does not show feeds, trending content, or engagement stats. It is a control panel for your Nostr identity.
 
-## Architecture docs
+## Install
 
-- `docs/architecture.md` — Idenstr service boundaries and implementation order.
-- `docs/data-model.md` — Nostr canonical event vs local app metadata boundary.
-- `docs/ios-strategy.md` — iOS/PWA path, limits, and native-app decision gate.
-
-## Local development
+### Docker Compose (recommended)
 
 ```bash
-npm test
-npm run check
+git clone https://github.com/sette7blo/idenstr.git
+cd idenstr
+cp .env.example .env
+# edit .env — add your IDENSTR_NSEC and IDENSTR_NPUB
+docker compose up -d
+```
+
+Open `http://localhost:3000`
+
+### Docker run
+
+```bash
+docker run -d \
+  --name idenstr \
+  -p 3000:3000 \
+  -v idenstr-data:/data \
+  -e IDENSTR_KEY_MODE=env_nsec \
+  -e IDENSTR_NPUB=your-npub-here \
+  -e IDENSTR_NSEC=your-nsec-here \
+  dockersette/idenstr:latest
+```
+
+### From source
+
+Requires Node.js 22+.
+
+```bash
+git clone https://github.com/sette7blo/idenstr.git
+cd idenstr
+cp .env.example .env
+# edit .env
 npm start
 ```
 
-Then open:
+## Configuration
 
-```text
-http://localhost:3000
-```
+All configuration is in `.env`. See `.env.example` for all available options.
 
-## iOS / iPhone / iPad
+| Variable | Required | Description |
+|---|---|---|
+| `IDENSTR_NSEC` | Yes | Your Nostr private key (nsec format) |
+| `IDENSTR_NPUB` | Yes | Your Nostr public key (npub format) |
+| `IDENSTR_HOST_PORT` | No | Host port (default: 3000) |
+| `IDENSTR_DB_PASSWORD` | No | Postgres password (default: idenstr-dev-password) |
+| `IDENSTR_DEFAULT_READ_RELAYS` | No | Comma-separated relay URLs for reading |
+| `IDENSTR_DEFAULT_WRITE_RELAYS` | No | Comma-separated relay URLs for writing |
 
-The first iOS-compatible version is an installable PWA:
+Your private key never leaves the server. It is read from `.env` at startup, used to sign events server-side, and never exposed through the API, logs, or UI.
 
-1. Expose Idenstr over HTTPS or VPN-accessible URL.
-2. Open it in Safari on iPhone/iPad.
-3. Use Share → Add to Home Screen.
-4. Launch it as a standalone app.
+## iOS / iPad
 
-For v0.1, iOS uses the same server-side `.env` key model as the web app. Do not store plaintext `nsec` in browser local storage and do not add a signer layer.
+Idenstr works as an installable PWA:
 
-See `docs/ios-strategy.md`.
+1. Expose Idenstr over HTTPS (reverse proxy, Tailscale, etc.)
+2. Open in Safari on your device
+3. Share > Add to Home Screen
+4. Launch as a standalone app
 
-## API endpoints
+## The *str stack
 
-```text
-GET    /api/v1/system/info
-GET    /api/v1/system/health
-GET    /api/v1/capabilities
-GET    /api/v1/overview
-GET    /api/v1/dashboard
-GET    /api/v1/identity
-GET    /api/v1/profile
-PUT    /api/v1/profile
-GET    /api/v1/following
-POST   /api/v1/following
-POST   /api/v1/following/profiles/refresh
-DELETE /api/v1/following/{id}
-GET    /api/v1/relays
-PUT    /api/v1/relays
-POST   /api/v1/relays/publish
-POST   /api/v1/relays/scan
-GET    /api/v1/backups
-POST   /api/v1/backups
-GET    /api/v1/api-tokens
-POST   /api/v1/api-tokens
-DELETE /api/v1/api-tokens/{id}
-```
+Idenstr is designed to work standalone or as part of a larger self-hosted Nostr stack. Each *str app is independent and connects to others via URL + API token — just like Sonarr connects to Prowlarr.
 
-Create an API token:
+| App | Purpose | Status |
+|---|---|---|
+| **Idenstr** | Identity, profile, following, relay state, backups | v0.1.0 |
+| Relaystr | Relay policy, health monitoring, routing | Planned |
+| Feedstr | Calm feed engine, no trending or engagement bait | Planned |
+| Mediastr | Avatar/banner hosting, media ownership | Planned |
+| Archivstr | Personal archive and event preservation | Planned |
+| Liststr | Mutes, bookmarks, topic groups | Planned |
+| Publishstr | Composer, drafts, scheduled publishing | Planned |
+| Searchstr | Local search over owned Nostr data | Planned |
+| Discoverstr | Trust-based discovery without clickbait | Planned |
 
-```bash
-curl -s http://localhost:3000/api/v1/api-tokens   -H 'content-type: application/json'   -d '{"name":"Feedstr link","scopes":["read:identity","read:following"]}'
-```
+## License
 
-Tokens are returned once and stored only as SHA-256 hashes in the development JSON token store.
-
-## Docker image
-
-Build:
-
-```bash
-docker build -t idenstr:dev .
-```
-
-Run:
-
-```bash
-docker run --rm   -p 3000:3000   -v idenstr-data:/data   -e IDENSTR_KEY_MODE=env_nsec   -e IDENSTR_NSEC=replace-with-your-nsec   -e IDENSTR_PRIVATE_RELAY_URL=ws://private-relay:8080   idenstr:dev
-```
-
-The long-term release artifact should be a published Docker/OCI image. Compose files are orchestration examples, not the product.
-
-## UX direction
-
-The visual language intentionally blends:
-
-- mysterious sovereign control room
-- cyberpunk dark surfaces
-- Monero orange privacy signal
-- Bitcoin gold self-custody signal
-- purple decentralized identity glow
-- `*arr`/torrent-style operational dashboard density
-
-Idenstr is not a social feed. It is the key room.
+[MIT](LICENSE)
