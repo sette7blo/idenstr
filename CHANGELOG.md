@@ -13,6 +13,17 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
+## [v0.1.1] — 2026-06-09
+### Changed
+- New logo and branding: violet crescent with golden star, replacing old star icon
+- PWA icons now use PNG assets (512, 192, 180) instead of SVG
+- Added favicon for browser tab
+- Header displays new logo mark
+- Softer purple background gradients replacing orange accents
+- Faster fallback relay discovery with ranked relay selection
+
+---
+
 ## [v0.1.0] — 2026-06-09
 ### Added
 - Project scaffolding: Node.js server, Dockerfile, compose stack
@@ -30,5 +41,6 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v0.1.1...HEAD
+[v0.1.1]: https://github.com/sette7blo/idenstr/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/sette7blo/idenstr/releases/tag/v0.1.0

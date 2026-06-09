@@ -155,7 +155,7 @@ export async function refreshFollowingAnalytics() {
     for (let index = 0; index < notObservedEntries.length; index += 40) {
       const fallbackEntries = notObservedEntries.slice(index, index + 40);
       const fallbackPubkeys = fallbackEntries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
-      const fallback = await fetchFollowCurationEvents(fallbackPubkeys, fallbackRelays, { timeoutMs: 8000, activityBatchSize: 1, includeContacts: false });
+      const fallback = await fetchFollowCurationEvents(fallbackPubkeys, fallbackRelays, { timeoutMs: 5000, activityBatchSize: 4, includeContacts: false });
       state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey(), state.tuning);
     }
   }
@@ -185,7 +185,7 @@ export async function* refreshFollowingAnalyticsStreaming() {
     for (let index = 0; index < notObservedEntries.length; index += 40) {
       const fallbackEntries = notObservedEntries.slice(index, index + 40);
       const fallbackPubkeys = fallbackEntries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
-      const fallback = await fetchFollowCurationEvents(fallbackPubkeys, fallbackRelays, { timeoutMs: 8000, activityBatchSize: 1, includeContacts: false });
+      const fallback = await fetchFollowCurationEvents(fallbackPubkeys, fallbackRelays, { timeoutMs: 5000, activityBatchSize: 4, includeContacts: false });
       state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey(), state.tuning);
       const nowObserved = entries.filter((entry) => state.following.analytics[normalizePubkey(entry.pubkey)]?.activityTier !== 'unknown').length;
       yield { type: 'progress', completed: nowObserved, total, phase: 'fallback' };
@@ -565,7 +565,7 @@ function normalizeFollowProfile(content = {}) {
   };
 }
 
-async function discoverFollowWriteRelays(entries, baseRelays) {
+async function discoverFollowWriteRelays(entries, baseRelays, maxRelays = 8) {
   const pubkeys = entries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
   if (!pubkeys.length || !baseRelays.length) return [];
   const fetched = await fetchFollowRelayLists(pubkeys, baseRelays, { timeoutMs: 6000 });
@@ -576,16 +576,16 @@ async function discoverFollowWriteRelays(entries, baseRelays) {
     const existing = latestByAuthor.get(author);
     if (!existing || (event.created_at ?? 0) > (existing.created_at ?? 0)) latestByAuthor.set(author, event);
   }
-  const discovered = new Set();
   const baseSet = new Set(baseRelays);
+  const counts = new Map();
   for (const event of latestByAuthor.values()) {
     for (const tag of event.tags ?? []) {
       if (tag[0] !== 'r' || !tag[1]) continue;
       const url = normalizeRelayUrl(tag[1]);
-      if (url && !baseSet.has(url)) discovered.add(url);
+      if (url && !baseSet.has(url)) counts.set(url, (counts.get(url) ?? 0) + 1);
     }
   }
-  return [...discovered];
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxRelays).map(([url]) => url);
 }
 
 function defaultFollowAnalytics(pubkey) {
