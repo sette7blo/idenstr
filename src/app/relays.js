@@ -15,7 +15,17 @@ export async function saveRelays(relays) {
     updatedAt: new Date().toISOString()
   };
   state.relays.event = buildCanonicalEvent(10002, state.relays);
-  addAudit(state, 'relays.updated', 'Relay read/write policy updated');
+  state.relays.scan = [];
+  state.relays.consistency = null;
+  state.relays.popularity = null;
+  if (state.profile?.truth) state.profile.truth = null;
+  if (state.profile?.event?.relayResults) {
+    state.profile.event = buildCanonicalEvent(0, state.profile);
+  }
+  if (state.following?.event?.relayResults) {
+    state.following.event = buildCanonicalEvent(3, []);
+  }
+  addAudit(state, 'relays.updated', 'Relay policy updated, stale publish results cleared');
   await saveState(state);
   return state.relays;
 }
