@@ -158,10 +158,17 @@ scan: compare local follows against public relays</div>
     <section id="backups" class="cards two view" data-view="backups">
       <a class="section-back span-2" href="#overview" data-tab="overview">← Identity overview</a>
       <article class="panel card">
-        <h3>Backup vault state</h3>
-        <p>Create a public-event backup manifest for profile, following, and relay policy. The nsec is not exported by this action.</p>
-        <button class="button primary" id="create-backup">Create backup manifest</button>
+        <h3>Export backup</h3>
+        <p>Download your profile, following list, and relay policy as a JSON file. Your nsec is never included.</p>
+        <button class="button primary" id="create-backup">Download backup</button>
         <div id="backup-list" class="list empty">No backups yet.</div>
+      </article>
+      <article class="panel card">
+        <h3>Restore from backup</h3>
+        <p>Upload a previously exported Idenstr backup file to restore your profile, following list, and relay policy. This overwrites current local state.</p>
+        <input type="file" id="restore-file" accept=".json" style="display:none" />
+        <button class="button caution" id="restore-backup">Restore from file</button>
+        <div id="restore-status"></div>
       </article>
       <article class="panel card">
         <h3>Audit trail</h3>

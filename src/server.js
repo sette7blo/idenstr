@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCapabilities, getHealth, getOverview, getSystemInfo } from './app/system.js';
-import { addFollowing, createBackup, discoverFollowSuggestions, getBackups, getDashboard, getFollowing, getIdentity, getProfile, getRelays, publishFollowing, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays } from './app/identity.js';
+import { addFollowing, createBackup, discoverFollowSuggestions, getBackups, getDashboard, getFollowing, getIdentity, getProfile, getRelays, publishFollowing, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, restoreBackup, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays } from './app/identity.js';
 import { TokenStore } from './app/tokenStore.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -59,7 +59,11 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/relays/scan') return sendJson(res, 200, await scanRelays());
 
   if (req.method === 'GET' && url.pathname === '/api/v1/backups') return sendJson(res, 200, { backups: await getBackups() });
-  if (req.method === 'POST' && url.pathname === '/api/v1/backups') return sendJson(res, 201, await createBackup());
+  if (req.method === 'POST' && url.pathname === '/api/v1/backups') {
+    const result = await createBackup();
+    return sendDownload(res, `idenstr-backup-${result.backup.id.slice(0, 8)}.json`, result.data);
+  }
+  if (req.method === 'POST' && url.pathname === '/api/v1/backups/restore') return sendJson(res, 200, await restoreBackup(await readJson(req)));
   if (req.method === 'GET' && url.pathname === '/api/v1/api-tokens') return sendJson(res, 200, { tokens: await tokenStore.listTokens() });
   if (req.method === 'POST' && url.pathname === '/api/v1/api-tokens') {
     const body = await readJson(req);
@@ -116,6 +120,15 @@ async function readJson(req) {
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload, null, 2));
+}
+
+function sendDownload(res, filename, payload) {
+  const body = JSON.stringify(payload, null, 2);
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`
+  });
+  res.end(body);
 }
 
 async function streamGenerator(res, generator) {

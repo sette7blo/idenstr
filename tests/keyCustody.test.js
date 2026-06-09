@@ -7,7 +7,7 @@ test('default key custody is .env nsec, not signer or docker secret', async () =
   const health = getHealth({ privateRelayUrl: 'ws://private-relay:8080' });
   assert.equal(health.keyMode, 'env_nsec');
 
-  const envExample = await readFile(new URL('../../infra/.env.example', import.meta.url), 'utf8');
+  const envExample = await readFile(new URL('../.env.example', import.meta.url), 'utf8');
   assert.match(envExample, /IDENSTR_KEY_MODE=env_nsec/);
   assert.match(envExample, /IDENSTR_NSEC=/);
   assert.doesNotMatch(envExample, /watch_only/);

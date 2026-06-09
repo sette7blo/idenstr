@@ -7,7 +7,7 @@ import { enrichedFollowingEntries, followAnalyticsSummary, followDirectorySummar
 export { getProfile, saveProfile, scanProfile, publishProfile, profileTruth } from './profile.js';
 export { getFollowing, addFollowing, removeFollowing, saveFollowing, publishFollowing, scanFollowing, refreshFollowingProfiles, refreshFollowingProfilesStreaming, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, discoverFollowSuggestions, followDirectorySummary, followAnalyticsSummary, computeFollowAnalytics, mergeFollowActivityAnalytics, followListTruth } from './following.js';
 export { getRelays, saveRelays, publishRelays, scanRelays, computeFollowingRelayPopularity } from './relays.js';
-export { getBackups, createBackup } from './backup.js';
+export { getBackups, createBackup, restoreBackup } from './backup.js';
 export { loadState } from './state.js';
 
 export function getIdentity() {

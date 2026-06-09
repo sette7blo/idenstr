@@ -1097,8 +1097,59 @@ document.querySelector('#publish-relays').addEventListener('click', async () => 
 });
 
 document.querySelector('#create-backup').addEventListener('click', async () => {
-  await api('backups', { method: 'POST' });
+  const res = await fetch('./api/v1/backups', { method: 'POST' });
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename="(.+?)"/);
+  const filename = match ? match[1] : 'idenstr-backup.json';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
   await refresh();
+});
+
+const restoreFileInput = document.querySelector('#restore-file');
+const restoreStatus = document.querySelector('#restore-status');
+let pendingRestoreData = null;
+
+document.querySelector('#restore-backup').addEventListener('click', () => {
+  restoreFileInput.click();
+});
+
+restoreFileInput.addEventListener('change', async () => {
+  const file = restoreFileInput.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    pendingRestoreData = JSON.parse(text);
+    const follows = (pendingRestoreData.following?.entries ?? []).length;
+    restoreStatus.innerHTML = `<div class="restore-confirm"><p>Ready to restore from <strong>${escapeHtml(file.name)}</strong>: ${follows} follows. This overwrites current local state.</p><button class="button caution" id="restore-confirm-yes">Overwrite and restore</button> <button class="button ghost" id="restore-confirm-no">Cancel</button></div>`;
+    restoreFileInput.value = '';
+  } catch (err) {
+    restoreStatus.textContent = `Failed to read file: ${err.message}`;
+    restoreFileInput.value = '';
+  }
+});
+
+document.querySelector('#restore-status').addEventListener('click', async (e) => {
+  if (e.target.id === 'restore-confirm-no') {
+    pendingRestoreData = null;
+    restoreStatus.textContent = '';
+    return;
+  }
+  if (e.target.id === 'restore-confirm-yes' && pendingRestoreData) {
+    try {
+      const result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestoreData) });
+      restoreStatus.textContent = `Restored: ${result.restored.join(', ')}`;
+      pendingRestoreData = null;
+      await refresh();
+    } catch (err) {
+      restoreStatus.textContent = `Restore failed: ${err.message}`;
+      pendingRestoreData = null;
+    }
+  }
 });
 
 els.tabs.forEach((tab) => {

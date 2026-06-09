@@ -44,6 +44,7 @@ volumes:
 IDENSTR_KEY_MODE=env_nsec
 IDENSTR_NPUB=your-npub-here
 IDENSTR_NSEC=your-nsec-here
+IDENSTR_HOST_PORT=3000
 ```
 
 Then start it:
@@ -76,7 +77,6 @@ All configuration is in `.env`. See `.env.example` for all available options.
 | `IDENSTR_NSEC` | Yes | Your Nostr private key (nsec format) |
 | `IDENSTR_NPUB` | Yes | Your Nostr public key (npub format) |
 | `IDENSTR_HOST_PORT` | No | Host port (default: 3000) |
-| `IDENSTR_DB_PASSWORD` | No | Postgres password (default: idenstr-dev-password) |
 | `IDENSTR_DEFAULT_READ_RELAYS` | No | Comma-separated relay URLs for reading |
 | `IDENSTR_DEFAULT_WRITE_RELAYS` | No | Comma-separated relay URLs for writing |
 

@@ -37,7 +37,7 @@ function defaultState() {
   return {
     profile: { name: 'primary', displayName: 'Primary Nostr Identity', about: 'Canonical profile draft held by Idenstr.', website: '', picture: '', banner: '', updatedAt: now, event: buildCanonicalEvent(0, { name: 'primary' }) },
     following: { entries: [], directory: {}, directoryUpdatedAt: null, updatedAt: now, event: buildCanonicalEvent(3, []) },
-    relays: { read, write, private: process.env.IDENSTR_PRIVATE_RELAY_URL || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
+    relays: { read, write, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
     backups: [],
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
   };

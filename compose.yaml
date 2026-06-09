@@ -5,62 +5,14 @@
 
 services:
   idenstr:
-    build: .
+    image: dockersette/idenstr:latest
     container_name: idenstr
     restart: unless-stopped
-    environment:
-      IDENSTR_APP_DB_URL: postgres://idenstr:${IDENSTR_DB_PASSWORD:-idenstr-dev-password}@idenstr-db:5432/idenstr
-      IDENSTR_KEY_MODE: ${IDENSTR_KEY_MODE:-env_nsec}
-      IDENSTR_NPUB: ${IDENSTR_NPUB:?set IDENSTR_NPUB in .env}
-      IDENSTR_NSEC: ${IDENSTR_NSEC:?set IDENSTR_NSEC in .env}
-      IDENSTR_PRIVATE_RELAY_URL: ws://private-relay:8080
-      IDENSTR_BIND_HOST: 0.0.0.0
-      IDENSTR_BIND_PORT: 3000
+    env_file: .env
     ports:
-      - "${IDENSTR_HOST_BIND:-0.0.0.0}:${IDENSTR_HOST_PORT:-3000}:3000"
+      - "${IDENSTR_HOST_PORT:-3000}:3000"
     volumes:
-      - idenstr_backups:/app/backups
-    depends_on:
-      - idenstr-db
-      - private-relay
-    networks:
-      - idenstr-net
-
-  idenstr-db:
-    image: postgres:16-alpine
-    container_name: idenstr-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: idenstr
-      POSTGRES_USER: idenstr
-      POSTGRES_PASSWORD: ${IDENSTR_DB_PASSWORD:-idenstr-dev-password}
-    volumes:
-      - idenstr_db_data:/var/lib/postgresql/data
-    networks:
-      - idenstr-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U idenstr -d idenstr"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  private-relay:
-    image: scsibug/nostr-rs-relay:latest
-    container_name: idenstr-private-relay
-    restart: unless-stopped
-    volumes:
-      - private_relay_data:/usr/src/app/db
-      - ./relay/nostr-rs-relay.toml:/usr/src/app/config.toml:ro
-    ports:
-      - "127.0.0.1:${IDENSTR_PRIVATE_RELAY_HOST_PORT:-8081}:8080"
-    networks:
-      - idenstr-net
-
-networks:
-  idenstr-net:
-    name: idenstr-net
+      - idenstr-data:/data
 
 volumes:
-  idenstr_db_data:
-  private_relay_data:
-  idenstr_backups:
+  idenstr-data:
