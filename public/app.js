@@ -720,7 +720,6 @@ function renderBackups(backups) {
       </div>
       <div>
         <a class="button ghost" href="./api/v1/backups/download/${encodeURIComponent(backup.filename)}" download="${escapeHtml(backup.filename)}">Download</a>
-        <button class="button ghost" data-restore-backup="${escapeHtml(backup.filename)}">Restore</button>
       </div>
     </div>
   `).join('');
@@ -1134,13 +1133,6 @@ restoreFileInput.addEventListener('change', async () => {
   }
 });
 
-els.backupList.addEventListener('click', (e) => {
-  const filename = e.target.dataset.restoreBackup;
-  if (!filename) return;
-  pendingRestore = { type: 'server', filename };
-  restoreStatus.innerHTML = `<p>Restore from <strong>${escapeHtml(filename)}</strong>? This overwrites current local state.</p><button class="button caution" id="restore-confirm-yes">Overwrite and restore</button> <button class="button ghost" id="restore-confirm-no">Cancel</button>`;
-});
-
 restoreStatus.addEventListener('click', async (e) => {
   if (e.target.id === 'restore-confirm-no') {
     pendingRestore = null;
@@ -1149,12 +1141,7 @@ restoreStatus.addEventListener('click', async (e) => {
   }
   if (e.target.id === 'restore-confirm-yes' && pendingRestore) {
     try {
-      let result;
-      if (pendingRestore.type === 'upload') {
-        result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestore.data) });
-      } else {
-        result = await api(`backups/restore/${encodeURIComponent(pendingRestore.filename)}`, { method: 'POST' });
-      }
+      const result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestore.data) });
       restoreStatus.textContent = `Restored: ${result.restored.join(', ')}`;
       pendingRestore = null;
       await refresh();
