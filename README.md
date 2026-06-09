@@ -20,11 +20,35 @@ Idenstr is not a Nostr client. It does not show feeds, trending content, or enga
 
 ### Docker Compose (recommended)
 
+Create a directory for Idenstr and add two files:
+
+**compose.yaml**
+```yaml
+services:
+  idenstr:
+    image: dockersette/idenstr:latest
+    container_name: idenstr
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - idenstr-data:/data
+
+volumes:
+  idenstr-data:
+```
+
+**.env**
 ```bash
-git clone https://github.com/sette7blo/idenstr.git
-cd idenstr
-cp .env.example .env
-# edit .env — add your IDENSTR_NSEC and IDENSTR_NPUB
+IDENSTR_KEY_MODE=env_nsec
+IDENSTR_NPUB=your-npub-here
+IDENSTR_NSEC=your-nsec-here
+```
+
+Then start it:
+
+```bash
 docker compose up -d
 ```
 
@@ -41,18 +65,6 @@ docker run -d \
   -e IDENSTR_NPUB=your-npub-here \
   -e IDENSTR_NSEC=your-nsec-here \
   dockersette/idenstr:latest
-```
-
-### From source
-
-Requires Node.js 22+.
-
-```bash
-git clone https://github.com/sette7blo/idenstr.git
-cd idenstr
-cp .env.example .env
-# edit .env
-npm start
 ```
 
 ## Configuration
