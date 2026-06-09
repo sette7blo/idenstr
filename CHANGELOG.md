@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+---
+
+## [v0.1.0] — 2026-06-09
 ### Added
 - Project scaffolding: Node.js server, Dockerfile, compose stack
 - Identity module: import existing nsec from env, derive npub
@@ -27,4 +30,5 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/commits/main
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/sette7blo/idenstr/releases/tag/v0.1.0
