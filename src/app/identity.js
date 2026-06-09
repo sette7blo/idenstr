@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { bech32Decode, convertBits, derivePubkeyHexFromNsec, deriveNpubFromNsec, fingerprint, loadState, normalizePubkey, pubkeyToNpub } from './state.js';
 import { profileContent } from './profile.js';
 import { enrichedFollowingEntries, followAnalyticsSummary, followDirectorySummary } from './following.js';
+import { getBackups } from './backup.js';
 
 // Re-export all domain functions for server.js
 export { getProfile, saveProfile, scanProfile, publishProfile, profileTruth } from './profile.js';
