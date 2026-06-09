@@ -1,0 +1,14 @@
+{
+  "name": "idenstr",
+  "version": "0.1.0",
+  "description": "Self-hosted Nostr identity dashboard for the modular *str ecosystem.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/app/system.js && node --check src/app/tokenStore.js && node --check src/app/identity.js && node --check src/app/nostrRelay.js && node --check src/app/nostrSigner.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

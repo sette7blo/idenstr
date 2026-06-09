@@ -1,0 +1,26 @@
+{
+  "name": "Idenstr",
+  "short_name": "Idenstr",
+  "description": "Sovereign Nostr identity dashboard for self-hosted identity, relays, vault, and backups.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#040208",
+  "theme_color": "#7c3cff",
+  "categories": ["utilities", "security", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

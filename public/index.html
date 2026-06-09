@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Idenstr — Sovereign Nostr Identity</title>
+  <meta name="description" content="A self-hosted Nostr identity dashboard for profile, follows, relays, backups, and app tokens." />
+  <meta name="theme-color" content="#7c3cff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Idenstr" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.svg" />
+  <link rel="stylesheet" href="./styles.css?v=following-bulk-cleanup-1" />
+  <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
+</head>
+<body>
+  <div class="noise"></div>
+  <div class="cyber-grid"></div>
+  <header class="topbar">
+    <div class="brand"><span class="sigil">✦</span><span>Idenstr</span><small id="live-status">loading</small></div>
+  </header>
+
+  <main>
+    <section class="hero view" data-view="overview">
+      <div class="eyebrow">SINGLE PRIMARY IDENTITY · SERVER-SIDE NSEC</div>
+      <h1>Your Nostr identity control room.</h1>
+      <p class="lede">A calm place to maintain one identity: profile, follows, relays, and backups. No feed. No growth dashboard. No noisy everything-at-once screen.</p>
+    </section>
+
+    <section id="overview" class="dashboard-shell view" data-view="overview">
+      <section class="main-grid">
+        <article class="panel wide public-profile-card">
+          <div id="profile-banner" class="profile-banner" role="img" aria-label="Nostr profile banner"></div>
+          <img id="profile-avatar" class="profile-avatar" alt="Nostr profile avatar" loading="lazy" />
+          <div class="public-profile-copy">
+            <div class="panel-head"><span>Public profile</span><strong id="profile-event">kind:0</strong></div>
+            <h2 id="profile-display-name">Loading profile</h2>
+            <code id="npub-value" class="profile-npub">loading</code>
+            <p id="profile-summary">Loading profile.</p>
+            <a href="#profile" data-tab="profile">Edit profile</a>
+          </div>
+        </article>
+        <article class="panel metric"><span class="metric-label">Following</span><strong id="following-count">0</strong><p>Intentional follows, no follower analytics.</p><a href="#following" data-tab="following">Manage follows</a></article>
+        <article class="panel metric"><span class="metric-label">Relays</span><strong id="relay-count">0</strong><p>Read/write public relay policy plus local vault.</p><a href="#relays" data-tab="relays">Check relays</a></article>
+        <article class="panel metric"><span class="metric-label">Backups</span><strong id="backup-count">0</strong><p>Public-event backup manifests; nsec excluded unless encrypted.</p><a href="#backups" data-tab="backups">Backup state</a></article>
+      </section>
+    </section>
+
+    <section id="profile" class="workbench panel view" data-view="profile">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Canonical kind:0 profile</span><strong>draft-local</strong></div>
+      <form id="profile-form" class="form-grid">
+        <label>Name<input name="name" autocomplete="off" /></label>
+        <label>Display name<input name="displayName" autocomplete="off" /></label>
+        <label>Website<input name="website" autocomplete="off" /></label>
+        <label>Picture URL<input name="picture" autocomplete="off" /></label>
+        <label class="span-2">Banner URL<input name="banner" autocomplete="off" /></label>
+        <label class="span-2">About<textarea name="about" rows="4"></textarea></label>
+        <button class="button primary" type="submit">Save profile draft</button>
+        <button class="button ghost" type="button" id="publish-profile">Publish to write relays</button>
+        <button class="button ghost" type="button" id="scan-profile">Scan profile truth</button>
+      </form>
+      <div id="profile-publish-status" class="terminal-mini">Save creates a local kind:0 draft. Publish signs it server-side and sends it to configured write relays.</div>
+      <div class="subsection-head"><span>Profile truth</span><small>Local profile vs published relay state</small></div>
+      <div id="profile-truth" class="profile-truth empty">Run scan to compare local profile against public relays.</div>
+    </section>
+
+    <section id="following" class="workbench panel view" data-view="following">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Canonical kind:3 following</span><strong id="following-event">draft-local</strong></div>
+      <form id="follow-form" class="form-grid compact follow-add-inline">
+        <label>Pubkey or npub<input name="pubkey" required autocomplete="off" placeholder="npub1... or hex pubkey" /></label>
+        <label>Petname<input name="petname" autocomplete="off" placeholder="optional" /></label>
+        <label>Relay hint<input name="relayHint" autocomplete="off" placeholder="wss://..." /></label>
+        <button class="button primary" type="submit">Add follow</button>
+      </form>
+      <div class="following-tools">
+        <input id="following-search" placeholder="Search follows by name, npub, relay hint, about..." autocomplete="off" />
+        <select id="following-filter" aria-label="Filter follows">
+          <option value="all">All follows</option>
+          <option value="high-engagement">High engagement</option>
+          <option value="engaged">Engaged</option>
+          <option value="follows-you">Follows me</option>
+          <option value="one-way">One-way</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="dormant">Dormant</option>
+          <option value="unknown">Unknown</option>
+        </select>
+        <select id="following-sort" aria-label="Sort follows">
+          <option value="default">Sort: current order</option>
+          <option value="quality">Sort: engagement quality</option>
+          <option value="activity">Sort: last activity</option>
+          <option value="name">Sort: name</option>
+        </select>
+        <select id="following-sort-direction" aria-label="Sort direction">
+          <option value="desc">Highest first</option>
+          <option value="asc">Lowest first</option>
+        </select>
+      </div>
+      <div id="following-directory-summary" class="following-cache-status empty">Profile cache not refreshed yet</div>
+      <div id="following-selection-bar" class="follow-selection-bar empty" aria-live="polite">Select follows to enable cleanup actions.</div>
+      <div class="following-scroll-window" aria-label="Scrollable followed profiles directory">
+        <div id="following-list" class="list empty">No follows yet.</div>
+      </div>
+      <div class="following-action-bar">
+        <div class="following-action-group" aria-label="Kind:3 state actions">
+          <button class="button primary" type="button" id="save-following">Save</button>
+          <button class="button ghost" type="button" id="publish-following">Publish</button>
+          <button class="button ghost" type="button" id="scan-following">Scan truth</button>
+        </div>
+        <div class="following-action-group secondary" aria-label="Directory tools">
+          <button class="button ghost" type="button" id="refresh-follow-profiles">Refresh profiles</button>
+          <button class="button ghost" type="button" id="refresh-follow-analytics">Refresh activity</button>
+        </div>
+      </div>
+      <div id="following-progress" class="following-progress hidden" aria-live="polite">
+        <div class="progress-bar"><div class="progress-fill" id="following-progress-fill"></div></div>
+        <span id="following-progress-text">0/0</span>
+      </div>
+      <div id="following-state" class="terminal-mini following-terminal empty">$ idenstr following status
+state: local edits stay private until publish
+scan: compare local follows against public relays</div>
+      <div id="following-truth" class="following-truth empty">Run scan to compare local following list against public relays.</div>
+      <div class="subsection-head"><span>Discover</span><small>Suggested follows from your mutual network</small></div>
+      <div id="following-discover" class="following-discover empty">Run discover to find accounts followed by your mutuals that you may want to add.</div>
+      <button class="button ghost" type="button" id="discover-following">Discover suggestions</button>
+    </section>
+
+    <section id="relays" class="workbench panel view" data-view="relays">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Relay policy and scan</span><strong>kind:10002</strong></div>
+      <p class="section-help">Local policy is Idenstr's draft/source of truth. Publish signs that policy as a Nostr kind:10002 relay-list event and sends it to your write relays. Scan checks public relay state, shows mismatches, and lets you add trusted published relays into local policy.</p>
+      <form id="relay-add-form" class="form-grid compact relay-add-form">
+        <label>Relay URL<input name="url" placeholder="wss://relay.example" autocomplete="off" /></label>
+        <label class="relay-role-toggle add-role"><input name="read" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Read</strong><small>Use for fetching</small></span></label>
+        <label class="relay-role-toggle add-role"><input name="write" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Write</strong><small>Use for publishing</small></span></label>
+        <button class="button primary" type="submit">Add relay</button>
+      </form>
+      <div class="subsection-head"><span>Local relay policy</span><small>Ranked by follow popularity after scan</small></div>
+      <div id="relay-list" class="relay-list empty">No relays configured.</div>
+      <div class="subsection-head"><span>Top missing follow relays</span><small>Popular among follows, not in local policy</small></div>
+      <div id="relay-suggestions" class="relay-suggestions empty">Run scan to discover popular relays you may want to add.</div>
+      <form id="relay-form" class="form-grid relay-policy-form">
+        <label class="relay-raw-field">Read relays<textarea name="read" rows="4"></textarea></label>
+        <label class="relay-raw-field">Write relays<textarea name="write" rows="4"></textarea></label>
+        <label class="span-2">Private vault relay<input name="private" autocomplete="off" /></label>
+        <button class="button primary" type="submit">Save local relay policy</button>
+        <button class="button ghost" type="button" id="publish-relays">Publish relay list</button>
+        <button class="button ghost" type="button" id="scan-relays">Scan & compare published state</button>
+      </form>
+      <div class="subsection-head"><span>Relay activity log</span><small>Publish and scan results</small></div>
+      <div id="relay-activity" class="terminal-mini">Save stores the local draft only. Publish broadcasts kind:10002. Scan checks configured relays and compares public truth with local policy.</div>
+      <div id="relay-truth" class="relay-truth empty">Run scan to compare local policy against the newest published relay list.</div>
+    </section>
+
+    <section id="backups" class="cards two view" data-view="backups">
+      <a class="section-back span-2" href="#overview" data-tab="overview">← Identity overview</a>
+      <article class="panel card">
+        <h3>Backup vault state</h3>
+        <p>Create a public-event backup manifest for profile, following, and relay policy. The nsec is not exported by this action.</p>
+        <button class="button primary" id="create-backup">Create backup manifest</button>
+        <div id="backup-list" class="list empty">No backups yet.</div>
+      </article>
+      <article class="panel card">
+        <h3>Audit trail</h3>
+        <div id="audit-log" class="list empty">No audit entries yet.</div>
+      </article>
+      <article class="panel card span-2">
+        <h3>App-linking, not a monolith</h3>
+        <p>Scoped tokens are here for future `*str` apps, but they stay out of the main identity flow.</p>
+        <a class="button ghost" href="./api/v1/api-tokens">List tokens API</a>
+      </article>
+    </section>
+  </main>
+
+  <script src="./app.js?v=following-bulk-cleanup-1" defer></script>
+</body>
+</html>

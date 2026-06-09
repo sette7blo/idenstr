@@ -1,0 +1,25 @@
+# Private relay / local vault for Idenstr.
+#
+# Verify exact nostr-rs-relay settings before production use.
+# The intended posture is local/LAN/VPN-only personal vault, not public relay hosting.
+
+[info]
+name = "Idenstr Private Vault"
+description = "Local private Nostr relay/vault for canonical Idenstr events"
+pubkey = ""
+contact = ""
+
+[network]
+address = "0.0.0.0"
+port = 8080
+
+[database]
+data_directory = "/usr/src/app/db"
+
+[authorization]
+# Desired policy for v0.1:
+# - no public registration
+# - writes restricted to the configured identity/app
+# - relay is not intended as a public relay
+# Exact allowlist/auth plugin settings must be verified against the selected relay implementation.
+restrict_write = true
