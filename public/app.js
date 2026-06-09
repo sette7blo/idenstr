@@ -71,7 +71,8 @@ function setView(viewName) {
 }
 
 function render(data) {
-  const { identity, profile, following, relays, backups, audit } = data;
+  const { identity, profile, following, relays, tuning, backups, audit } = data;
+  if (tuning) fillTuning(tuning);
   els.liveStatus.textContent = identity.status;
   els.npubValue.textContent = identity.npub || 'No npub configured';
 
@@ -1150,6 +1151,50 @@ restoreStatus.addEventListener('click', async (e) => {
       pendingRestore = null;
     }
   }
+});
+
+const tuningForm = document.querySelector('#tuning-form');
+const defaultTuning = { discover: { candidates: 20, results: 10 }, relaySuggestions: 3, engagement: { weights: { post: 3, repost: 2, reaction: 1, zap: 4 }, thresholds: { high: 40, engaged: 10 } }, activity: { veryActive: 3, active: 14, quiet: 60, inactive: 90 } };
+
+function fillTuning(t) {
+  const f = tuningForm;
+  f['discover.candidates'].value = t.discover?.candidates ?? defaultTuning.discover.candidates;
+  f['discover.results'].value = t.discover?.results ?? defaultTuning.discover.results;
+  f['relaySuggestions'].value = t.relaySuggestions ?? defaultTuning.relaySuggestions;
+  f['engagement.weights.post'].value = t.engagement?.weights?.post ?? defaultTuning.engagement.weights.post;
+  f['engagement.weights.repost'].value = t.engagement?.weights?.repost ?? defaultTuning.engagement.weights.repost;
+  f['engagement.weights.reaction'].value = t.engagement?.weights?.reaction ?? defaultTuning.engagement.weights.reaction;
+  f['engagement.weights.zap'].value = t.engagement?.weights?.zap ?? defaultTuning.engagement.weights.zap;
+  f['engagement.thresholds.high'].value = t.engagement?.thresholds?.high ?? defaultTuning.engagement.thresholds.high;
+  f['engagement.thresholds.engaged'].value = t.engagement?.thresholds?.engaged ?? defaultTuning.engagement.thresholds.engaged;
+  f['activity.veryActive'].value = t.activity?.veryActive ?? defaultTuning.activity.veryActive;
+  f['activity.active'].value = t.activity?.active ?? defaultTuning.activity.active;
+  f['activity.quiet'].value = t.activity?.quiet ?? defaultTuning.activity.quiet;
+  f['activity.inactive'].value = t.activity?.inactive ?? defaultTuning.activity.inactive;
+}
+
+function readTuning() {
+  const f = tuningForm;
+  return {
+    discover: { candidates: Number(f['discover.candidates'].value), results: Number(f['discover.results'].value) },
+    relaySuggestions: Number(f['relaySuggestions'].value),
+    engagement: {
+      weights: { post: Number(f['engagement.weights.post'].value), repost: Number(f['engagement.weights.repost'].value), reaction: Number(f['engagement.weights.reaction'].value), zap: Number(f['engagement.weights.zap'].value) },
+      thresholds: { high: Number(f['engagement.thresholds.high'].value), engaged: Number(f['engagement.thresholds.engaged'].value) }
+    },
+    activity: { veryActive: Number(f['activity.veryActive'].value), active: Number(f['activity.active'].value), quiet: Number(f['activity.quiet'].value), inactive: Number(f['activity.inactive'].value) }
+  };
+}
+
+tuningForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await api('tuning', { method: 'PUT', body: JSON.stringify(readTuning()) });
+  await refresh();
+});
+
+document.querySelector('#tuning-reset').addEventListener('click', async () => {
+  await api('tuning', { method: 'PUT', body: JSON.stringify(defaultTuning) });
+  await refresh();
 });
 
 els.tabs.forEach((tab) => {

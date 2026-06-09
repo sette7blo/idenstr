@@ -58,6 +58,24 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/relays/publish') return sendJson(res, 200, await publishRelays());
   if (req.method === 'POST' && url.pathname === '/api/v1/relays/scan') return sendJson(res, 200, await scanRelays());
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await (await import('./app/state.js')).loadState(); return sendJson(res, 200, state.tuning); }
+  if (req.method === 'PUT' && url.pathname === '/api/v1/tuning') {
+    const { loadState: ls, saveState: ss, addAudit: aa, DEFAULT_TUNING: dt } = await import('./app/state.js');
+    const state = await ls();
+    const body = await readJson(req);
+    state.tuning = {
+      discover: { candidates: clampInt(body.discover?.candidates, 5, 100, dt.discover.candidates), results: clampInt(body.discover?.results, 1, 50, dt.discover.results) },
+      relaySuggestions: clampInt(body.relaySuggestions, 1, 20, dt.relaySuggestions),
+      engagement: {
+        weights: { post: clampInt(body.engagement?.weights?.post, 0, 20, dt.engagement.weights.post), repost: clampInt(body.engagement?.weights?.repost, 0, 20, dt.engagement.weights.repost), reaction: clampInt(body.engagement?.weights?.reaction, 0, 20, dt.engagement.weights.reaction), zap: clampInt(body.engagement?.weights?.zap, 0, 20, dt.engagement.weights.zap) },
+        thresholds: { high: clampInt(body.engagement?.thresholds?.high, 1, 100, dt.engagement.thresholds.high), engaged: clampInt(body.engagement?.thresholds?.engaged, 1, 100, dt.engagement.thresholds.engaged) }
+      },
+      activity: { veryActive: clampInt(body.activity?.veryActive, 1, 30, dt.activity.veryActive), active: clampInt(body.activity?.active, 1, 60, dt.activity.active), quiet: clampInt(body.activity?.quiet, 1, 180, dt.activity.quiet), inactive: clampInt(body.activity?.inactive, 1, 365, dt.activity.inactive) }
+    };
+    aa(state, 'tuning.updated', 'Tuning parameters updated');
+    await ss(state);
+    return sendJson(res, 200, state.tuning);
+  }
   if (req.method === 'GET' && url.pathname === '/api/v1/backups') return sendJson(res, 200, { backups: await getBackups() });
   if (req.method === 'POST' && url.pathname === '/api/v1/backups') return sendJson(res, 201, await createBackup());
   if (req.method === 'GET' && url.pathname.startsWith('/api/v1/backups/download/')) {
@@ -129,6 +147,12 @@ async function readJson(req) {
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload, null, 2));
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
 }
 
 function sendDownload(res, filename, content) {

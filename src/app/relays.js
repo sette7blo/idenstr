@@ -1,6 +1,6 @@
 import { fetchCurrentRelayState, fetchFollowRelayLists, publishEventToRelays } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
-import { addAudit, buildCanonicalEvent, cleanString, getRequiredPubkey, loadState, normalizeRelays, normalizeRelayUrl, normalizePubkey, saveState } from './state.js';
+import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, normalizeRelays, normalizeRelayUrl, normalizePubkey, saveState } from './state.js';
 
 export async function getRelays() {
   return (await loadState()).relays;
@@ -63,13 +63,14 @@ export async function scanRelays() {
   const followRelayState = await fetchFollowRelayLists(followPubkeys, all, { timeoutMs: 7500 });
   state.relays.scan = scanRows(relayState.relays);
   state.relays.consistency = relayListConsistency(state.relays, relayState.latest.relayList);
-  state.relays.popularity = computeFollowingRelayPopularity(state.relays, state.following.entries, followRelayState.events, followRelayState.relays);
+  state.relays.popularity = computeFollowingRelayPopularity(state.relays, state.following.entries, followRelayState.events, followRelayState.relays, state.tuning);
   addAudit(state, 'relays.scanned', `Scanned ${all.length} configured public relays and checked relay lists for ${followPubkeys.length} follows`);
   await saveState(state);
   return { scan: state.relays.scan, consistency: state.relays.consistency, popularity: state.relays.popularity };
 }
 
-export function computeFollowingRelayPopularity(localRelays, followingEntries = [], relayListEvents = [], sourceRelayResults = []) {
+export function computeFollowingRelayPopularity(localRelays, followingEntries = [], relayListEvents = [], sourceRelayResults = [], tuning = null) {
+  const relaySuggestionLimit = tuning?.relaySuggestions ?? DEFAULT_TUNING.relaySuggestions;
   const local = new Set(normalizeRelays([...(localRelays.read ?? []), ...(localRelays.write ?? [])]));
   const follows = followingEntries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
   const total = follows.length;
@@ -96,7 +97,7 @@ export function computeFollowingRelayPopularity(localRelays, followingEntries = 
     followsWithRelayLists: latestByAuthor.size,
     sourceRelays: sourceRelayResults.map((result) => ({ url: result.relay, status: result.status, eventCount: result.events?.length ?? 0, latencyMs: result.latencyMs, error: result.error })),
     local: rows.filter((row) => row.local).sort(sortPopularityRows),
-    suggestions: rows.filter((row) => !row.local && row.count > 0).sort(sortPopularityRows).slice(0, 3)
+    suggestions: rows.filter((row) => !row.local && row.count > 0).sort(sortPopularityRows).slice(0, relaySuggestionLimit)
   };
 }
 

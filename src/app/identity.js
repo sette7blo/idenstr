@@ -42,6 +42,7 @@ export async function getDashboard() {
       entries: enrichedFollowingEntries(state.following)
     },
     relays: state.relays,
+    tuning: state.tuning,
     backups: await getBackups(),
     audit: state.audit.slice(0, 20)
   };

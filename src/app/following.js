@@ -1,6 +1,6 @@
 import { fetchAuthorProfiles, fetchCurrentRelayState, fetchFollowCurationEvents, publishEventToRelays } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
-import { addAudit, buildCanonicalEvent, cleanString, getRequiredPubkey, loadState, newestEvent, normalizePubkey, normalizeRelayUrl, parseJsonObject, pubkeyToNpub, randomUUID, saveState } from './state.js';
+import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, newestEvent, normalizePubkey, normalizeRelayUrl, parseJsonObject, pubkeyToNpub, randomUUID, saveState } from './state.js';
 
 export async function getFollowing() {
   return (await loadState()).following;
@@ -147,13 +147,13 @@ export async function refreshFollowingAnalytics() {
   const relayHints = entries.map((entry) => normalizeRelayUrl(entry.relayHint)).filter(Boolean);
   const relays = [...new Set([...relayHints, ...(state.relays.read ?? []), ...(state.relays.write ?? [])])];
   const fetched = await fetchFollowCurationEvents(pubkeys, relays, { timeoutMs: 8000, batchSize: 60 });
-  state.following.analytics = computeFollowAnalytics(entries, fetched.events, fetched.relays, getRequiredPubkey());
+  state.following.analytics = computeFollowAnalytics(entries, fetched.events, fetched.relays, getRequiredPubkey(), state.tuning);
   const notObservedEntries = entries.filter((entry) => state.following.analytics[normalizePubkey(entry.pubkey)]?.activityTier === 'unknown');
   for (let index = 0; index < notObservedEntries.length; index += 40) {
     const fallbackEntries = notObservedEntries.slice(index, index + 40);
     const fallbackPubkeys = fallbackEntries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
     const fallback = await fetchFollowCurationEvents(fallbackPubkeys, relays, { timeoutMs: 8000, activityBatchSize: 1, includeContacts: false });
-    state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey());
+    state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey(), state.tuning);
   }
   state.following.analyticsUpdatedAt = new Date().toISOString();
   const summary = followAnalyticsSummary(state.following);
@@ -171,7 +171,7 @@ export async function* refreshFollowingAnalyticsStreaming() {
   const total = pubkeys.length;
   yield { type: 'progress', completed: 0, total, phase: 'activity' };
   const fetched = await fetchFollowCurationEvents(pubkeys, relays, { timeoutMs: 8000, batchSize: 60 });
-  state.following.analytics = computeFollowAnalytics(entries, fetched.events, fetched.relays, getRequiredPubkey());
+  state.following.analytics = computeFollowAnalytics(entries, fetched.events, fetched.relays, getRequiredPubkey(), state.tuning);
   const observed = entries.filter((entry) => state.following.analytics[normalizePubkey(entry.pubkey)]?.activityTier !== 'unknown').length;
   yield { type: 'progress', completed: observed, total, phase: 'activity' };
   const notObservedEntries = entries.filter((entry) => state.following.analytics[normalizePubkey(entry.pubkey)]?.activityTier === 'unknown');
@@ -179,7 +179,7 @@ export async function* refreshFollowingAnalyticsStreaming() {
     const fallbackEntries = notObservedEntries.slice(index, index + 40);
     const fallbackPubkeys = fallbackEntries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
     const fallback = await fetchFollowCurationEvents(fallbackPubkeys, relays, { timeoutMs: 8000, activityBatchSize: 1, includeContacts: false });
-    state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey());
+    state.following.analytics = mergeFollowActivityAnalytics(state.following.analytics, fallbackEntries, fallback.events, fallback.relays, getRequiredPubkey(), state.tuning);
     const nowObserved = entries.filter((entry) => state.following.analytics[normalizePubkey(entry.pubkey)]?.activityTier !== 'unknown').length;
     yield { type: 'progress', completed: nowObserved, total, phase: 'fallback' };
   }
@@ -231,16 +231,20 @@ export async function discoverFollowSuggestions() {
     }
   }
 
+  const tuning = state.tuning ?? DEFAULT_TUNING;
+  const discoverCandidates = tuning.discover?.candidates ?? 20;
+  const discoverResults = tuning.discover?.results ?? 10;
+
   const ranked = [...candidateCounts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 20);
+    .slice(0, discoverCandidates);
 
   if (!ranked.length) {
     return { suggestions: [], message: 'No new suggestions found among mutual follow lists.' };
   }
 
   const candidatePubkeys = ranked.map(([pubkey]) => pubkey);
-  const profiles = await fetchAuthorProfiles(candidatePubkeys, relays, { timeoutMs: 7500, batchSize: 20 });
+  const profiles = await fetchAuthorProfiles(candidatePubkeys, relays, { timeoutMs: 7500, batchSize: discoverCandidates });
   const profileMap = new Map();
   for (const event of profiles.events) {
     const pk = normalizePubkey(event.pubkey);
@@ -249,7 +253,7 @@ export async function discoverFollowSuggestions() {
     if (!existing || (event.created_at ?? 0) > (existing.created_at ?? 0)) profileMap.set(pk, event);
   }
 
-  const suggestions = ranked.slice(0, 10).map(([pubkey, mutualCount]) => {
+  const suggestions = ranked.slice(0, discoverResults).map(([pubkey, mutualCount]) => {
     const profileEvent = profileMap.get(pubkey);
     const profile = profileEvent ? normalizeDiscoverProfile(parseJsonObject(profileEvent.content)) : null;
     return {
@@ -334,7 +338,7 @@ export function followAnalyticsSummary(following = {}) {
   };
 }
 
-export function computeFollowAnalytics(entries = [], events = [], relayResults = [], myPubkey = '') {
+export function computeFollowAnalytics(entries = [], events = [], relayResults = [], myPubkey = '', tuning = null) {
   const now = Math.floor(Date.now() / 1000);
   const thirtyDaysAgo = now - 30 * 86400;
   const latestKind3 = new Map();
@@ -364,14 +368,14 @@ export function computeFollowAnalytics(entries = [], events = [], relayResults =
     const contactList = latestKind3.get(pubkey);
     const followsYou = contactList ? (contactList.tags ?? []).some((tag) => tag[0] === 'p' && normalizePubkey(tag[1]) === myPubkey) : null;
     const stats = activity.get(pubkey) ?? defaultActivityStats();
-    const engagement = engagementQuality(stats.counts, stats.lastActivityAt);
+    const engagement = engagementQuality(stats.counts, stats.lastActivityAt, tuning);
     return [pubkey, {
       pubkey,
       followsYou,
       followsYouStatus: contactList ? 'known' : (anyRelayAnswered ? 'unknown' : 'error'),
       contactListEvent: contactList ? { id: contactList.id, created_at: contactList.created_at, relay: contactList.relay } : null,
       activityStatus: stats.lastActivityAt ? 'known' : (anyActivityRelayAnswered ? 'not-observed' : 'unknown'),
-      activityTier: activityTier(stats.lastActivityAt),
+      activityTier: activityTier(stats.lastActivityAt, tuning),
       lastActivityAt: stats.lastActivityAt,
       lastPostAt: stats.lastPostAt,
       lastRepostAt: stats.lastRepostAt,
@@ -384,8 +388,8 @@ export function computeFollowAnalytics(entries = [], events = [], relayResults =
   }).filter(([pubkey]) => pubkey));
 }
 
-export function mergeFollowActivityAnalytics(existingAnalytics = {}, entries = [], events = [], relayResults = [], myPubkey = '') {
-  const fallbackAnalytics = computeFollowAnalytics(entries, events, relayResults, myPubkey);
+export function mergeFollowActivityAnalytics(existingAnalytics = {}, entries = [], events = [], relayResults = [], myPubkey = '', tuning = null) {
+  const fallbackAnalytics = computeFollowAnalytics(entries, events, relayResults, myPubkey, tuning);
   const merged = { ...existingAnalytics };
   for (const [pubkey, fallback] of Object.entries(fallbackAnalytics)) {
     if (fallback.activityTier === 'unknown' || !fallback.lastActivityAt) continue;
@@ -565,29 +569,32 @@ function defaultActivityStats() {
   return { lastActivityAt: null, lastPostAt: null, lastRepostAt: null, lastReactionAt: null, lastZapAt: null, counts: { posts30d: 0, reposts30d: 0, reactions30d: 0, zaps30d: 0 } };
 }
 
-function activityTier(lastActivityAt, now = Math.floor(Date.now() / 1000)) {
+function activityTier(lastActivityAt, tuning = null, now = Math.floor(Date.now() / 1000)) {
   if (!lastActivityAt) return 'unknown';
+  const t = tuning?.activity ?? DEFAULT_TUNING.activity;
   const ageDays = (now - lastActivityAt) / 86400;
-  if (ageDays <= 3) return 'very-active';
-  if (ageDays <= 14) return 'active';
-  if (ageDays <= 60) return 'quiet';
-  if (ageDays <= 90) return 'inactive';
+  if (ageDays <= t.veryActive) return 'very-active';
+  if (ageDays <= t.active) return 'active';
+  if (ageDays <= t.quiet) return 'quiet';
+  if (ageDays <= t.inactive) return 'inactive';
   return 'dormant';
 }
 
-function engagementQuality(counts = {}, lastActivityAt = null) {
+function engagementQuality(counts = {}, lastActivityAt = null, tuning = null) {
+  const w = tuning?.engagement?.weights ?? DEFAULT_TUNING.engagement.weights;
+  const th = tuning?.engagement?.thresholds ?? DEFAULT_TUNING.engagement.thresholds;
   const normalized = {
     posts30d: counts.posts30d ?? 0,
     reposts30d: counts.reposts30d ?? 0,
     reactions30d: counts.reactions30d ?? 0,
     zaps30d: counts.zaps30d ?? 0
   };
-  const rawScore = normalized.posts30d * 3 + normalized.reposts30d * 2 + normalized.reactions30d + normalized.zaps30d * 4;
+  const rawScore = normalized.posts30d * w.post + normalized.reposts30d * w.repost + normalized.reactions30d * w.reaction + normalized.zaps30d * w.zap;
   const score = Math.min(100, rawScore);
   let tier = 'unknown';
   if (lastActivityAt) {
-    if (score >= 40) tier = 'high';
-    else if (score >= 10) tier = 'engaged';
+    if (score >= th.high) tier = 'high';
+    else if (score >= th.engaged) tier = 'engaged';
     else if (score > 0) tier = 'light';
     else tier = 'low';
   }

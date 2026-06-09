@@ -30,6 +30,16 @@ function getStatePath() {
   return process.env.IDENSTR_STATE_STORE ?? join(root, 'data', 'idenstr-state.json');
 }
 
+export const DEFAULT_TUNING = {
+  discover: { candidates: 20, results: 10 },
+  relaySuggestions: 3,
+  engagement: {
+    weights: { post: 3, repost: 2, reaction: 1, zap: 4 },
+    thresholds: { high: 40, engaged: 10 }
+  },
+  activity: { veryActive: 3, active: 14, quiet: 60, inactive: 90 }
+};
+
 function defaultState() {
   const now = new Date().toISOString();
   const read = normalizeRelays(process.env.IDENSTR_DEFAULT_READ_RELAYS || 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net');
@@ -38,13 +48,15 @@ function defaultState() {
     profile: { name: 'primary', displayName: 'Primary Nostr Identity', about: 'Canonical profile draft held by Idenstr.', website: '', picture: '', banner: '', updatedAt: now, event: buildCanonicalEvent(0, { name: 'primary' }) },
     following: { entries: [], directory: {}, directoryUpdatedAt: null, updatedAt: now, event: buildCanonicalEvent(3, []) },
     relays: { read, write, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
+    tuning: { ...DEFAULT_TUNING },
     backups: [],
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
   };
 }
 
 function mergeDefaults(state) {
-  return { ...defaultState(), ...state, audit: state.audit ?? [] };
+  const defaults = defaultState();
+  return { ...defaults, ...state, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
 }
 
 export function buildCanonicalEvent(kind, content) {
