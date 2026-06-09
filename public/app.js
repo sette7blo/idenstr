@@ -713,7 +713,16 @@ function renderBackups(backups) {
   }
   els.backupList.className = 'list';
   els.backupList.innerHTML = backups.map((backup) => `
-    <div class="row"><div><strong>${new Date(backup.createdAt).toLocaleString()}</strong><small>${backup.sizeBytes} bytes, nsec included: ${backup.nsecIncluded}</small></div></div>
+    <div class="row">
+      <div>
+        <strong>${new Date(backup.createdAt).toLocaleString()}</strong>
+        <small>${backup.followingCount} follows, ${(backup.sizeBytes / 1024).toFixed(1)} KB</small>
+      </div>
+      <div>
+        <a class="button ghost" href="./api/v1/backups/download/${encodeURIComponent(backup.filename)}" download="${escapeHtml(backup.filename)}">Download</a>
+        <button class="button ghost" data-restore-backup="${escapeHtml(backup.filename)}">Restore</button>
+      </div>
+    </div>
   `).join('');
 }
 
@@ -1097,24 +1106,15 @@ document.querySelector('#publish-relays').addEventListener('click', async () => 
 });
 
 document.querySelector('#create-backup').addEventListener('click', async () => {
-  const res = await fetch('./api/v1/backups', { method: 'POST' });
-  const blob = await res.blob();
-  const disposition = res.headers.get('content-disposition') || '';
-  const match = disposition.match(/filename="(.+?)"/);
-  const filename = match ? match[1] : 'idenstr-backup.json';
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  await api('backups', { method: 'POST' });
   await refresh();
 });
 
 const restoreFileInput = document.querySelector('#restore-file');
 const restoreStatus = document.querySelector('#restore-status');
-let pendingRestoreData = null;
+let pendingRestore = null;
 
-document.querySelector('#restore-backup').addEventListener('click', () => {
+document.querySelector('#upload-backup').addEventListener('click', () => {
   restoreFileInput.click();
 });
 
@@ -1123,9 +1123,10 @@ restoreFileInput.addEventListener('change', async () => {
   if (!file) return;
   try {
     const text = await file.text();
-    pendingRestoreData = JSON.parse(text);
-    const follows = (pendingRestoreData.following?.entries ?? []).length;
-    restoreStatus.innerHTML = `<div class="restore-confirm"><p>Ready to restore from <strong>${escapeHtml(file.name)}</strong>: ${follows} follows. This overwrites current local state.</p><button class="button caution" id="restore-confirm-yes">Overwrite and restore</button> <button class="button ghost" id="restore-confirm-no">Cancel</button></div>`;
+    const data = JSON.parse(text);
+    const follows = (data.following?.entries ?? []).length;
+    pendingRestore = { type: 'upload', data };
+    restoreStatus.innerHTML = `<p>Ready to restore from <strong>${escapeHtml(file.name)}</strong>: ${follows} follows. This overwrites current local state.</p><button class="button caution" id="restore-confirm-yes">Overwrite and restore</button> <button class="button ghost" id="restore-confirm-no">Cancel</button>`;
     restoreFileInput.value = '';
   } catch (err) {
     restoreStatus.textContent = `Failed to read file: ${err.message}`;
@@ -1133,21 +1134,33 @@ restoreFileInput.addEventListener('change', async () => {
   }
 });
 
-document.querySelector('#restore-status').addEventListener('click', async (e) => {
+els.backupList.addEventListener('click', (e) => {
+  const filename = e.target.dataset.restoreBackup;
+  if (!filename) return;
+  pendingRestore = { type: 'server', filename };
+  restoreStatus.innerHTML = `<p>Restore from <strong>${escapeHtml(filename)}</strong>? This overwrites current local state.</p><button class="button caution" id="restore-confirm-yes">Overwrite and restore</button> <button class="button ghost" id="restore-confirm-no">Cancel</button>`;
+});
+
+restoreStatus.addEventListener('click', async (e) => {
   if (e.target.id === 'restore-confirm-no') {
-    pendingRestoreData = null;
+    pendingRestore = null;
     restoreStatus.textContent = '';
     return;
   }
-  if (e.target.id === 'restore-confirm-yes' && pendingRestoreData) {
+  if (e.target.id === 'restore-confirm-yes' && pendingRestore) {
     try {
-      const result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestoreData) });
+      let result;
+      if (pendingRestore.type === 'upload') {
+        result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestore.data) });
+      } else {
+        result = await api(`backups/restore/${encodeURIComponent(pendingRestore.filename)}`, { method: 'POST' });
+      }
       restoreStatus.textContent = `Restored: ${result.restored.join(', ')}`;
-      pendingRestoreData = null;
+      pendingRestore = null;
       await refresh();
     } catch (err) {
       restoreStatus.textContent = `Restore failed: ${err.message}`;
-      pendingRestoreData = null;
+      pendingRestore = null;
     }
   }
 });

@@ -157,18 +157,16 @@ scan: compare local follows against public relays</div>
 
     <section id="backups" class="cards two view" data-view="backups">
       <a class="section-back span-2" href="#overview" data-tab="overview">← Identity overview</a>
-      <article class="panel card">
-        <h3>Export backup</h3>
-        <p>Download your profile, following list, and relay policy as a JSON file. Your nsec is never included.</p>
-        <button class="button primary" id="create-backup">Download backup</button>
-        <div id="backup-list" class="list empty">No backups yet.</div>
-      </article>
-      <article class="panel card">
-        <h3>Restore from backup</h3>
-        <p>Upload a previously exported Idenstr backup file to restore your profile, following list, and relay policy. This overwrites current local state.</p>
-        <input type="file" id="restore-file" accept=".json" style="display:none" />
-        <button class="button caution" id="restore-backup">Restore from file</button>
+      <article class="panel card span-2">
+        <h3>Backups</h3>
+        <p>Backups are saved to the server data volume. Your nsec is never included. You can download, restore, or upload a backup file from another instance.</p>
+        <div class="backup-actions">
+          <button class="button primary" id="create-backup">Create backup</button>
+          <input type="file" id="restore-file" accept=".json" style="display:none" />
+          <button class="button ghost" id="upload-backup">Upload backup file</button>
+        </div>
         <div id="restore-status"></div>
+        <div id="backup-list" class="list empty">No backups yet.</div>
       </article>
       <article class="panel card">
         <h3>Audit trail</h3>

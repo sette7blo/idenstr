@@ -15,7 +15,7 @@ test('follow analytics detects reciprocal follows and activity tiers', () => {
       { id: 'a-contact', kind: 3, pubkey: a, created_at: now - 100, tags: [['p', me]], relay: 'wss://relay.example' },
       { id: 'b-contact', kind: 3, pubkey: b, created_at: now - 100, tags: [], relay: 'wss://relay.example' },
       { id: 'a-note', kind: 1, pubkey: a, created_at: now - 86400, tags: [], relay: 'wss://relay.example' },
-      { id: 'b-note', kind: 1, pubkey: b, created_at: now - 90 * 86400, tags: [], relay: 'wss://relay.example' }
+      { id: 'b-note', kind: 1, pubkey: b, created_at: now - 75 * 86400, tags: [], relay: 'wss://relay.example' }
     ],
     [{ status: 'ok' }],
     me
