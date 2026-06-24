@@ -1,12 +1,14 @@
 const els = {
   liveStatus: document.querySelector('#live-status'),
   npubValue: document.querySelector('#npub-value'),
+  profileContacts: document.querySelector('#profile-contacts'),
   profileBanner: document.querySelector('#profile-banner'),
   profileAvatar: document.querySelector('#profile-avatar'),
   profileDisplayName: document.querySelector('#profile-display-name'),
   profileEvent: document.querySelector('#profile-event'),
   profileSummary: document.querySelector('#profile-summary'),
   followingCount: document.querySelector('#following-count'),
+  muteCount: document.querySelector('#mute-count'),
   relayCount: document.querySelector('#relay-count'),
   backupCount: document.querySelector('#backup-count'),
   followingEvent: document.querySelector('#following-event'),
@@ -23,13 +25,23 @@ const els = {
   followingProgressFill: document.querySelector('#following-progress-fill'),
   followingProgressText: document.querySelector('#following-progress-text'),
   followingDiscover: document.querySelector('#following-discover'),
+  muteForm: document.querySelector('#mute-form'),
+  mutesEvent: document.querySelector('#mutes-event'),
+  mutesList: document.querySelector('#mutes-list'),
+  mutesState: document.querySelector('#mutes-state'),
   relayAddForm: document.querySelector('#relay-add-form'),
   relayList: document.querySelector('#relay-list'),
   relayActivity: document.querySelector('#relay-activity'),
   relaySuggestions: document.querySelector('#relay-suggestions'),
   relayTruth: document.querySelector('#relay-truth'),
+  privateRelayForm: document.querySelector('#private-relay-form'),
+  privateRelayStatus: document.querySelector('#private-relay-status'),
+  privateRelayEvents: document.querySelector('#private-relay-events'),
+  privateRelayIndicator: document.querySelector('#private-relay-indicator'),
   backupList: document.querySelector('#backup-list'),
   auditLog: document.querySelector('#audit-log'),
+  auditCount: document.querySelector('#audit-count'),
+  tokenCount: document.querySelector('#token-count'),
   profileForm: document.querySelector('#profile-form'),
   profilePublishStatus: document.querySelector('#profile-publish-status'),
   profileTruth: document.querySelector('#profile-truth'),
@@ -48,14 +60,30 @@ let followingVisibleLimit = 50;
 const followingPageSize = 50;
 const followingSelectedIds = new Set();
 let followingBulkConfirm = false;
-const validViews = new Set(['overview', 'profile', 'following', 'relays', 'backups']);
+const validViews = new Set(['overview', 'profile', 'following', 'mutes', 'relays', 'private-relay', 'backups', 'tokens', 'audit', 'tuning']);
+
+function authHeaders(extra = {}) {
+  const headers = {
+    'content-type': 'application/json',
+    ...extra
+  };
+  for (const [key, value] of Object.entries(headers)) if (value === undefined || value === null) delete headers[key];
+  return headers;
+}
 
 async function api(path, options = {}) {
   const response = await fetch(`./api/v1/${path}`, {
-    headers: { 'content-type': 'application/json' },
-    ...options
+    ...options,
+    headers: authHeaders(options.headers || {})
   });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      detail = body.required ? `${body.error}: ${body.required}` : (body.error || detail);
+    } catch {}
+    throw new Error(detail);
+  }
   return response.json();
 }
 
@@ -68,10 +96,11 @@ function setView(viewName) {
   const next = validViews.has(viewName) ? viewName : 'overview';
   els.views.forEach((view) => view.classList.toggle('active-view', view.dataset.view === next));
   els.tabs.forEach((tab) => tab.classList.toggle('active-tab', tab.dataset.tab === next));
+  if (next === 'private-relay') loadPrivateRelay();
 }
 
 function render(data) {
-  const { identity, profile, following, relays, tuning, backups, audit } = data;
+  const { identity, profile, following, mutes, relays, tuning, backups, audit } = data;
   if (tuning) fillTuning(tuning);
   els.liveStatus.textContent = identity.status;
   els.npubValue.textContent = identity.npub || 'No npub configured';
@@ -82,7 +111,9 @@ function render(data) {
   els.profileSummary.textContent = profile.about || 'No about text yet.';
   renderProfileBanner(profile.banner, publicName);
   renderProfileAvatar(profile.picture, publicName);
+  renderProfileContacts(profile);
   els.followingCount.textContent = String(following.totalCount ?? following.entries.length);
+  if (els.muteCount) els.muteCount.textContent = String(mutes?.totalCount ?? mutes?.entries?.length ?? 0);
   els.relayCount.textContent = String(new Set([...relays.read, ...relays.write]).size);
   els.backupCount.textContent = String(backups.length);
   els.followingEvent.textContent = following.event.status;
@@ -90,10 +121,16 @@ function render(data) {
   fillForm(els.profileForm, profile);
   els.relayForm.elements.read.value = relays.read.join('\n');
   els.relayForm.elements.write.value = relays.write.join('\n');
-  els.relayForm.elements.private.value = relays.private || '';
+  if (els.privateRelayForm) els.privateRelayForm.elements.url.value = relays.private || '';
+  if (els.privateRelayIndicator) els.privateRelayIndicator.textContent = relays.private ? '1' : '0';
+  renderStateStrip('profile', eventPresence(profile.event));
+  renderStateStrip('following', eventPresence(following.event));
+  renderStateStrip('mutes', eventPresence(mutes?.event));
+  renderStateStrip('relays', eventPresence(relays.event));
   renderFollowing(following.entries, following.totalCount ?? following.entries.length, following.directorySummary, following.analyticsSummary);
   renderFollowingState(following);
   renderFollowingTruth(following);
+  renderMutes(mutes);
   if (following.discover) renderDiscover(following.discover);
   renderRelayList(relays);
   renderRelayActivity(relays);
@@ -109,6 +146,88 @@ function fillForm(form, values) {
   for (const element of form.elements) {
     if (element.name && Object.hasOwn(values, element.name)) element.value = values[element.name] || '';
   }
+}
+
+// Where a canonical object currently lives: Draft (DB) -> Private relay -> Public relays.
+function eventPresence(event = {}) {
+  return {
+    draft: true,
+    private: event?.localVault?.accepted === true,
+    public: event?.status === 'published' || (event?.acceptedRelays?.length > 0)
+  };
+}
+
+function renderStateStrip(name, presence) {
+  const strip = document.querySelector(`.state-strip[data-strip="${name}"]`);
+  if (!strip) return;
+  for (const seg of strip.querySelectorAll('.state-seg')) {
+    seg.classList.toggle('present', Boolean(presence[seg.dataset.store]));
+  }
+}
+
+function vaultKindMeta(kind) {
+  return ({
+    0: { name: 'Profile', tag: 'kind:0' },
+    1: { name: 'Notes', tag: 'kind:1' },
+    3: { name: 'Following', tag: 'kind:3' },
+    6: { name: 'Reposts', tag: 'kind:6' },
+    7: { name: 'Reactions', tag: 'kind:7' },
+    10002: { name: 'Relay list', tag: 'kind:10002' },
+    30078: { name: 'App data', tag: 'kind:30078' }
+  })[kind] || { name: `Kind ${kind}`, tag: `kind:${kind}` };
+}
+
+function renderPrivateRelayEvents(result) {
+  const box = els.privateRelayEvents;
+  if (!box) return;
+  if (!result || !result.ok) {
+    box.className = 'relay-list empty';
+    box.textContent = result?.message || 'Could not read the private relay. Use Refresh to try again.';
+    return;
+  }
+  if (!result.events?.length) {
+    box.className = 'relay-list empty';
+    box.textContent = 'Private relay reachable, but no events stored yet. Publish your profile, follows, or relay list to populate it.';
+    return;
+  }
+  box.className = 'vault-view';
+  const byKind = result.summary?.byKind || {};
+  const total = result.summary?.total ?? result.events.length;
+  const cards = Object.keys(byKind).map(Number).sort((a, b) => a - b).map((k) => {
+    const meta = vaultKindMeta(k);
+    return `<div class="vault-kind-card">
+      <span class="vk-count">${byKind[k]}</span>
+      <span class="vk-name">${escapeHtml(meta.name)}</span>
+      <span class="vk-tag">${escapeHtml(meta.tag)}</span>
+    </div>`;
+  }).join('');
+  const head = `<div class="vault-summary-head">
+    <div class="vault-total">
+      <span class="vault-total-num">${total}</span>
+      <span class="vault-total-label">signed events<br>in your vault</span>
+    </div>
+    <div class="vault-kind-cards">${cards}</div>
+  </div>`;
+  const rows = result.events.slice(0, 50).map((e) => {
+    const meta = vaultKindMeta(e.kind);
+    const when = e.created_at ? new Date(e.created_at * 1000).toISOString().slice(0, 19).replace('T', ' ') : '';
+    return `<div class="vault-event-row"><code class="kind-tag">${escapeHtml(meta.tag)}</code><span class="vault-event-name">${escapeHtml(meta.name)}</span><span class="dim">${escapeHtml(when)}</span><code class="dim">${escapeHtml((e.id || '').slice(0, 16))}…</code></div>`;
+  }).join('');
+  box.innerHTML = `${head}<div class="vault-event-list">${rows}</div>`;
+}
+
+function renderProfileContacts(profile) {
+  const parts = [];
+  if (profile.lud16) parts.push(`<span class="contact"><small>zap</small>${escapeHtml(profile.lud16)}</span>`);
+  if (profile.nip05) {
+    const status = profile.nip05Check?.status;
+    const badge = status === 'verified'
+      ? ' <em class="contact-badge ok">verified</em>'
+      : status && status !== 'unset' ? ` <em class="contact-badge warn">${escapeHtml(status)}</em>` : '';
+    parts.push(`<span class="contact"><small>nip-05</small>${escapeHtml(profile.nip05)}${badge}</span>`);
+  }
+  els.profileContacts.innerHTML = parts.join('');
+  els.profileContacts.style.display = parts.length ? '' : 'none';
 }
 
 function renderProfileBanner(banner, name) {
@@ -340,6 +459,42 @@ function renderFollowingTerminalLog(lines = []) {
   return lines.filter((line) => line != null && line !== '').join('\n');
 }
 
+function renderMutes(mutes = { entries: [] }) {
+  if (!els.mutesList) return;
+  const entries = mutes?.entries ?? [];
+  if (els.mutesEvent) els.mutesEvent.textContent = mutes?.event?.status || 'draft-local';
+  if (!entries.length) {
+    els.mutesList.className = 'list empty';
+    els.mutesList.textContent = 'No mutes yet.';
+  } else {
+    els.mutesList.className = 'list';
+    els.mutesList.innerHTML = entries.map((entry) => `
+      <div class="row">
+        <div>
+          <strong>${escapeHtml(entry.label || entry.value)}</strong>
+          <small>${escapeHtml(entry.type)} · ${escapeHtml(entry.value)}</small>
+        </div>
+        <button class="button ghost small" type="button" data-remove-mute="${escapeHtml(entry.id)}">Remove</button>
+      </div>
+    `).join('');
+  }
+  const event = mutes?.event || {};
+  if (event.status === 'published' || event.status === 'publish-attempted') {
+    els.mutesState.className = 'terminal-mini following-terminal';
+    els.mutesState.textContent = formatPublishLog(event.id, event.relayResults || [], 'kind:10000 mute list', event.localVault);
+  } else {
+    const summary = mutes?.summary || {};
+    els.mutesState.className = 'terminal-mini following-terminal empty';
+    els.mutesState.textContent = renderFollowingTerminalLog([
+      '$ idenstr mutes status',
+      `entries: ${entries.length} total · ${summary.pubkey || 0} people · ${summary.thread || 0} threads · ${summary.keyword || 0} keywords · ${summary.hashtag || 0} hashtags`,
+      'state: kind:10000 mute list is saved as a private draft in the app database',
+      'publish: signs kind:10000, writes it to your private relay, then broadcasts to write relays',
+      'apps: Feedstr filters feeds, threads, and notifications from this list'
+    ]);
+  }
+}
+
 function renderFollowingState(following) {
   const event = following.event || {};
   const hasPublish = event.status === 'published' || event.status === 'publish-attempted';
@@ -350,14 +505,14 @@ function renderFollowingState(following) {
       ...(event.rejectedRelays || []).map((row) => ({ ...row, accepted: false }))
     ];
     els.followingState.className = 'terminal-mini following-terminal';
-    els.followingState.textContent = formatPublishLog(event.id, results, 'kind:3 following list');
+    els.followingState.textContent = formatPublishLog(event.id, results, 'kind:3 following list', event.localVault);
   } else {
     els.followingState.className = 'terminal-mini following-terminal empty';
     els.followingState.textContent = renderFollowingTerminalLog([
       '$ idenstr following status',
-      'state: local kind:3 following list is saved as a private draft',
-      'publish: broadcasts signed kind:3 to write relays',
-      'scan: compare local follows against public relays'
+      'state: kind:3 following list is saved as a private draft in the app database',
+      'publish: signs kind:3, writes it to your private relay, then broadcasts to write relays',
+      'scan: compare the draft follows against public relays'
     ]);
   }
 }
@@ -445,9 +600,9 @@ function renderRelayActivity(relays) {
       ...(event.acceptedRelays || []).map((relay) => ({ relay, accepted: true, status: 'accepted' })),
       ...(event.rejectedRelays || []).map((row) => ({ ...row, accepted: false }))
     ];
-    lines.push(formatPublishLog(event.id, results, 'kind:10002 relay list'));
+    lines.push(formatPublishLog(event.id, results, 'kind:10002 relay list', event.localVault));
   } else {
-    lines.push('Publish: local relay policy is saved as draft only. Use Publish relay list to broadcast kind:10002.');
+    lines.push('Publish: relay policy is saved as draft only. Use Publish relay list to broadcast kind:10002.');
   }
 
   if (scan.length) {
@@ -503,7 +658,7 @@ function relayTruthModel(consistency) {
     title: score === 100 ? 'Local policy matches public truth' : 'Local policy differs from public truth',
     subtitle: `Source: ${consistency.relay || 'unknown relay'}`,
     message: score === 100
-      ? 'The local relay policy and the newest published kind:10002 relay list are aligned.'
+      ? 'The relay policy and the newest published kind:10002 relay list are aligned.'
       : `${publicOnly.length} published-only, ${localOnly.length} local-only, ${roleMismatch.length} role mismatch. Add published relays you still trust, then publish again to make public truth match local policy.`,
     publicOnly,
     localOnly
@@ -717,18 +872,24 @@ function renderBackups(backups) {
     <div class="row">
       <div>
         <strong>${new Date(backup.createdAt).toLocaleString()}</strong>
-        <small>${backup.followingCount} follows, ${(backup.sizeBytes / 1024).toFixed(1)} KB</small>
+        <small>${backup.followingCount} follows · ${backup.tokenCount ?? 0} tokens · ${backup.vaultIncluded ? `<span class="vault-badge">${backup.eventCount} vault events</span>` : '<span class="vault-badge none">no vault</span>'} · ${(backup.sizeBytes / 1024).toFixed(1)} KB</small>
       </div>
       <div>
-        <a class="button ghost" href="./api/v1/backups/download/${encodeURIComponent(backup.filename)}" download="${escapeHtml(backup.filename)}">Download</a>
+        <button class="button ghost" type="button" data-backup-download="${escapeHtml(backup.filename)}">Download</button>
       </div>
     </div>
   `).join('');
 }
 
 function renderAudit(audit) {
-  els.auditLog.className = 'list';
-  els.auditLog.innerHTML = audit.slice(0, 8).map((entry) => `
+  if (els.auditCount) els.auditCount.textContent = String(audit.length);
+  if (!audit.length) {
+    els.auditLog.className = 'list empty';
+    els.auditLog.textContent = 'No activity yet.';
+    return;
+  }
+  els.auditLog.className = 'list scroll-window';
+  els.auditLog.innerHTML = audit.map((entry) => `
     <div class="row"><div><strong>${escapeHtml(entry.type)}</strong><small>${escapeHtml(entry.message)} · ${new Date(entry.at).toLocaleString()}</small></div></div>
   `).join('');
 }
@@ -740,15 +901,26 @@ function renderProfilePublishStatus(profile) {
       ...(event.acceptedRelays || []).map((relay) => ({ relay, accepted: true, status: 'accepted' })),
       ...(event.rejectedRelays || []).map((row) => ({ ...row, accepted: false }))
     ];
-    els.profilePublishStatus.textContent = formatPublishLog(event.id, results);
+    els.profilePublishStatus.textContent = formatPublishLog(event.id, results, 'kind:0 profile', event.localVault);
     return;
   }
-  els.profilePublishStatus.textContent = 'Save creates a local kind:0 draft. Publish signs it server-side and sends it to configured write relays.';
+  els.profilePublishStatus.textContent = 'Save stores a private kind:0 draft in the app database. Publish signs it server-side, writes it to your private relay, then pushes it to your public write relays.';
 }
 
-function formatPublishLog(eventId, results, label = 'kind:0 profile') {
+function formatPublishLog(eventId, results, label = 'kind:0 profile', localVault = null) {
   const accepted = results.filter((row) => row.accepted).length;
-  const header = `Published ${label}\nEvent: ${eventId}\nRelay log: ${accepted}/${results.length} accepted`;
+  let vaultLine = null;
+  if (localVault) {
+    if (localVault.skipped) vaultLine = 'Private relay: skipped (not configured)';
+    else if (localVault.accepted) vaultLine = 'Private relay: written OK';
+    else vaultLine = `Private relay: FAILED — ${localVault.message || 'unreachable'}`;
+  }
+  const header = [
+    `Published ${label}`,
+    `Event: ${eventId}`,
+    vaultLine,
+    `Public relays: ${accepted}/${results.length} accepted`
+  ].filter(Boolean).join('\n');
   const rows = results.map((row) => {
     const mark = row.accepted ? 'OK' : 'NO';
     const latency = Number.isFinite(row.latencyMs) ? ` ${row.latencyMs}ms` : '';
@@ -758,73 +930,161 @@ function formatPublishLog(eventId, results, label = 'kind:0 profile') {
   return [header, ...rows].join('\n');
 }
 
+async function withButtonState(button, fn) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.classList.add('busy');
+  button.textContent = 'Working...';
+  try {
+    await fn();
+    button.textContent = 'Done';
+  } catch (error) {
+    button.textContent = 'Failed';
+    throw error;
+  } finally {
+    setTimeout(() => {
+      button.textContent = label;
+      button.disabled = false;
+      button.classList.remove('busy');
+    }, 1100);
+  }
+}
+
 els.profileForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const payload = Object.fromEntries(new FormData(els.profileForm));
-  await api('profile', { method: 'PUT', body: JSON.stringify(payload) });
-  await refresh();
+  await withButtonState(els.profileForm.querySelector('button[type="submit"]'), async () => {
+    const payload = Object.fromEntries(new FormData(els.profileForm));
+    await api('profile', { method: 'PUT', body: JSON.stringify(payload) });
+    els.profilePublishStatus.textContent = 'Local kind:0 profile saved. Nothing was published.';
+    await refresh();
+  });
 });
 
-document.querySelector('#publish-profile').addEventListener('click', async () => {
-  els.profilePublishStatus.textContent = 'Signing current profile and publishing to write relays...';
-  const result = await api('profile/publish', { method: 'POST' });
-  els.profilePublishStatus.textContent = formatPublishLog(result.published.event.id, result.published.results);
-  await refresh();
+document.querySelector('#publish-profile').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.profilePublishStatus.textContent = 'Signing current profile and publishing to write relays...';
+    const result = await api('profile/publish', { method: 'POST' });
+    els.profilePublishStatus.textContent = formatPublishLog(result.published.event.id, result.published.results);
+    await refresh();
+  });
 });
 
-document.querySelector('#scan-profile').addEventListener('click', async () => {
-  els.profileTruth.textContent = 'Scanning configured relays for published kind:0 profile truth...';
-  await api('profile/scan', { method: 'POST' });
-  await refresh();
+document.querySelector('#scan-profile').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.profileTruth.textContent = 'Scanning configured relays for published kind:0 profile truth...';
+    await api('profile/scan', { method: 'POST' });
+    await refresh();
+  });
+});
+
+document.querySelector('#verify-nip05').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.profilePublishStatus.textContent = 'Checking .well-known/nostr.json for the configured NIP-05 identifier...';
+    const check = await api('profile/nip05/verify', { method: 'POST' });
+    els.profilePublishStatus.textContent = `NIP-05 ${check.status}: ${check.detail}`;
+    await refresh();
+  });
 });
 
 els.followForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const payload = Object.fromEntries(new FormData(els.followForm));
-  await api('following', { method: 'POST', body: JSON.stringify(payload) });
-  els.followForm.reset();
-  await refresh();
+  await withButtonState(els.followForm.querySelector('button[type="submit"]'), async () => {
+    const payload = Object.fromEntries(new FormData(els.followForm));
+    await api('following', { method: 'POST', body: JSON.stringify(payload) });
+    els.followForm.reset();
+    await refresh();
+  });
 });
 
-document.querySelector('#save-following').addEventListener('click', async () => {
-  els.followingState.textContent = renderFollowingTerminalLog([
-    '$ idenstr following save',
-    'state: writing local kind:3 draft',
-    'status: running...'
-  ]);
-  await api('following/save', { method: 'POST' });
-  await refresh();
+els.muteForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await withButtonState(els.muteForm.querySelector('button[type="submit"]'), async () => {
+    const payload = Object.fromEntries(new FormData(els.muteForm));
+    await api('mutes', { method: 'POST', body: JSON.stringify(payload) });
+    els.muteForm.reset();
+    await refresh();
+  });
 });
 
-document.querySelector('#refresh-follow-profiles').addEventListener('click', async () => {
-  els.followingState.className = 'terminal-mini following-terminal running';
-  els.followingState.textContent = renderFollowingTerminalLog([
-    '$ idenstr following profiles refresh',
-    'status: running...'
-  ]);
-  showProgress(true);
-  await streamRefresh('following/profiles/refresh?stream=1');
-  showProgress(false);
-  await refresh();
+document.querySelector('#save-mutes')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.mutesState.textContent = renderFollowingTerminalLog(['$ idenstr mutes save', 'state: writing local kind:10000 draft', 'status: running...']);
+    await api('mutes', { method: 'PUT', body: JSON.stringify({ entries: dashboard?.mutes?.entries ?? [] }) });
+    await refresh();
+  });
 });
 
-document.querySelector('#refresh-follow-analytics').addEventListener('click', async () => {
-  els.followingState.className = 'terminal-mini following-terminal running';
-  els.followingState.textContent = renderFollowingTerminalLog([
-    '$ idenstr following analytics refresh',
-    'status: running...'
-  ]);
-  showProgress(true);
-  await streamRefresh('following/analytics/refresh?stream=1');
-  showProgress(false);
-  await refresh();
+document.querySelector('#publish-mutes')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.mutesState.className = 'terminal-mini following-terminal running';
+    els.mutesState.textContent = renderFollowingTerminalLog(['$ idenstr mutes publish', 'sign: kind:10000', 'status: running...']);
+    await api('mutes/publish', { method: 'POST' });
+    await refresh();
+  });
 });
 
-document.querySelector('#discover-following').addEventListener('click', async () => {
-  els.followingDiscover.className = 'following-discover';
-  els.followingDiscover.textContent = 'Scanning mutual follow lists for suggestions...';
-  const result = await api('following/discover', { method: 'POST' });
-  renderDiscover(result);
+els.mutesList?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-remove-mute]');
+  if (!button) return;
+  await withButtonState(button, async () => {
+    await api(`mutes/${encodeURIComponent(button.dataset.removeMute)}`, { method: 'DELETE' });
+    await refresh();
+  });
+});
+
+document.querySelector('#save-following').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingState.textContent = renderFollowingTerminalLog([
+      '$ idenstr following save',
+      'state: writing local kind:3 draft',
+      'status: running...'
+    ]);
+    await api('following/save', { method: 'POST' });
+    await refresh();
+  });
+});
+
+document.querySelector('#refresh-follow-profiles').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingState.className = 'terminal-mini following-terminal running';
+    els.followingState.textContent = renderFollowingTerminalLog([
+      '$ idenstr following profiles refresh',
+      'status: running...'
+    ]);
+    showProgress(true);
+    try {
+      await streamRefresh('following/profiles/refresh?stream=1');
+    } finally {
+      showProgress(false);
+    }
+    await refresh();
+  });
+});
+
+document.querySelector('#refresh-follow-analytics').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingState.className = 'terminal-mini following-terminal running';
+    els.followingState.textContent = renderFollowingTerminalLog([
+      '$ idenstr following analytics refresh',
+      'status: running...'
+    ]);
+    showProgress(true);
+    try {
+      await streamRefresh('following/analytics/refresh?stream=1');
+    } finally {
+      showProgress(false);
+    }
+    await refresh();
+  });
+});
+
+document.querySelector('#discover-following').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingDiscover.className = 'following-discover';
+    els.followingDiscover.textContent = 'Scanning mutual follow lists for suggestions...';
+    const result = await api('following/discover', { method: 'POST' });
+    renderDiscover(result);
+  });
 });
 
 els.followingDiscover.addEventListener('click', async (event) => {
@@ -852,7 +1112,8 @@ function updateProgress(completed, total) {
 }
 
 async function streamRefresh(path) {
-  const response = await fetch(`./api/v1/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' } });
+  const response = await fetch(`./api/v1/${path}`, { method: 'POST', headers: authHeaders() });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -905,29 +1166,33 @@ function renderDiscover(result) {
   `;
 }
 
-document.querySelector('#publish-following').addEventListener('click', async () => {
-  els.followingState.className = 'terminal-mini following-terminal running';
-  els.followingState.textContent = renderFollowingTerminalLog([
-    '$ idenstr following publish',
-    'event: signing local following list as kind:3',
-    'relay: broadcasting to write relays',
-    'status: running...'
-  ]);
-  const result = await api('following/publish', { method: 'POST' });
-  els.followingState.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:3 following list');
-  await refresh();
+document.querySelector('#publish-following').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingState.className = 'terminal-mini following-terminal running';
+    els.followingState.textContent = renderFollowingTerminalLog([
+      '$ idenstr following publish',
+      'event: signing local following list as kind:3',
+      'relay: broadcasting to write relays',
+      'status: running...'
+    ]);
+    const result = await api('following/publish', { method: 'POST' });
+    els.followingState.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:3 following list');
+    await refresh();
+  });
 });
 
-document.querySelector('#scan-following').addEventListener('click', async () => {
-  els.followingState.className = 'terminal-mini following-terminal running';
-  els.followingState.textContent = renderFollowingTerminalLog([
-    '$ idenstr following scan',
-    'relay: scanning configured relays for newest published kind:3',
-    'compare: local follow set vs public relay truth',
-    'status: running... this can take a moment'
-  ]);
-  await api('following/scan', { method: 'POST' });
-  await refresh();
+document.querySelector('#scan-following').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.followingState.className = 'terminal-mini following-terminal running';
+    els.followingState.textContent = renderFollowingTerminalLog([
+      '$ idenstr following scan',
+      'relay: scanning configured relays for newest published kind:3',
+      'compare: local follow set vs public relay truth',
+      'status: running... this can take a moment'
+    ]);
+    await api('following/scan', { method: 'POST' });
+    await refresh();
+  });
 });
 
 function rerenderFollowingDirectory() {
@@ -982,13 +1247,15 @@ els.followingSelectionBar.addEventListener('click', async (event) => {
     return;
   }
   if (event.target.closest('[data-follow-confirm-remove]')) {
-    const ids = [...followingSelectedIds];
-    els.followingSelectionBar.className = 'follow-selection-bar confirming';
-    els.followingSelectionBar.textContent = `Removing ${ids.length} selected follows from local draft...`;
-    for (const id of ids) await api(`following/${id}`, { method: 'DELETE' });
-    followingSelectedIds.clear();
-    followingBulkConfirm = false;
-    await refresh();
+    await withButtonState(event.target.closest('[data-follow-confirm-remove]'), async () => {
+      const ids = [...followingSelectedIds];
+      els.followingSelectionBar.className = 'follow-selection-bar confirming';
+      els.followingSelectionBar.textContent = `Removing ${ids.length} selected follows from local draft...`;
+      for (const id of ids) await api(`following/${id}`, { method: 'DELETE' });
+      followingSelectedIds.clear();
+      followingBulkConfirm = false;
+      await refresh();
+    });
   }
 });
 
@@ -1015,15 +1282,58 @@ els.followingList.addEventListener('click', async (event) => {
   }
   const button = event.target.closest('[data-remove-follow]');
   if (!button) return;
-  await api(`following/${button.dataset.removeFollow}`, { method: 'DELETE' });
-  await refresh();
+  await withButtonState(button, async () => {
+    await api(`following/${button.dataset.removeFollow}`, { method: 'DELETE' });
+    await refresh();
+  });
 });
 
 els.relayForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const payload = Object.fromEntries(new FormData(els.relayForm));
-  await api('relays', { method: 'PUT', body: JSON.stringify(payload) });
-  await refresh();
+  await withButtonState(els.relayForm.querySelector('button[type="submit"]'), async () => {
+    const payload = Object.fromEntries(new FormData(els.relayForm));
+    await api('relays', { method: 'PUT', body: JSON.stringify(payload) });
+    els.relayActivity.textContent = 'Relay policy saved. Nothing was published.';
+    await refresh();
+  });
+});
+
+els.privateRelayForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await withButtonState(els.privateRelayForm.querySelector('button[type="submit"]'), async () => {
+    const url = els.privateRelayForm.elements.url.value.trim();
+    const saved = await api('private-relay', { method: 'PUT', body: JSON.stringify({ url }) });
+    els.privateRelayStatus.textContent = saved?.restartRequired
+      ? `Private relay set to ${saved.url}. Written to .env — run \`docker compose up -d\` to apply, then Refresh to reconnect.`
+      : `Private relay saved: ${saved.url || 'unset'}.`;
+    await refresh();
+    if (!saved?.restartRequired) loadPrivateRelay();
+  });
+});
+
+let privateRelayLoading = false;
+async function loadPrivateRelay() {
+  if (privateRelayLoading) return;
+  privateRelayLoading = true;
+  els.privateRelayStatus.textContent = 'Connecting to your private relay and reading the vault...';
+  try {
+    const result = await api('private-relay/inspect', { method: 'POST' });
+    if (!result.configured) {
+      els.privateRelayStatus.textContent = 'No private relay configured yet. Save a URL above, then it will connect automatically.';
+      renderPrivateRelayEvents(result);
+      return;
+    }
+    els.privateRelayStatus.textContent = result.ok
+      ? `Private relay reachable at ${result.url}. ${result.message}.`
+      : `Private relay not reachable: ${result.message}.`;
+    renderPrivateRelayEvents(result);
+  } finally {
+    privateRelayLoading = false;
+  }
+}
+
+document.querySelector('#inspect-private-relay')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, loadPrivateRelay);
 });
 
 els.relayAddForm.addEventListener('submit', async (event) => {
@@ -1031,16 +1341,19 @@ els.relayAddForm.addEventListener('submit', async (event) => {
   const form = new FormData(els.relayAddForm);
   const url = normalizeRelayUrl(form.get('url'));
   if (!url) return;
-  const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  if (form.get('read')) read.add(url);
-  if (form.get('write')) write.add(url);
-  if (!form.get('read') && !form.get('write')) read.add(url);
-  await saveRelayPolicy([...read], [...write]);
-  els.relayAddForm.reset();
-  els.relayAddForm.elements.read.checked = true;
-  els.relayAddForm.elements.write.checked = true;
-  await refresh();
+  await withButtonState(els.relayAddForm.querySelector('button[type="submit"]'), async () => {
+    const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    if (form.get('read')) read.add(url);
+    if (form.get('write')) write.add(url);
+    if (!form.get('read') && !form.get('write')) read.add(url);
+    await saveRelayPolicy([...read], [...write]);
+    els.relayAddForm.reset();
+    els.relayAddForm.elements.read.checked = true;
+    els.relayAddForm.elements.write.checked = true;
+    els.relayActivity.textContent = `Added ${url} to relay policy. Nothing was published.`;
+    await refresh();
+  });
 });
 
 els.relayList.addEventListener('click', async (event) => {
@@ -1050,10 +1363,13 @@ els.relayList.addEventListener('click', async (event) => {
   const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
   if (removeButton) {
     const url = normalizeRelayUrl(removeButton.dataset.removeRelay);
-    read.delete(url);
-    write.delete(url);
-    await saveRelayPolicy([...read], [...write]);
-    await refresh();
+    await withButtonState(removeButton, async () => {
+      read.delete(url);
+      write.delete(url);
+      await saveRelayPolicy([...read], [...write]);
+      els.relayActivity.textContent = `Removed ${url} from relay policy. Nothing was published.`;
+      await refresh();
+    });
     return;
   }
   if (toggleButton) {
@@ -1070,12 +1386,15 @@ els.relaySuggestions.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-add-suggested-relay]');
   if (!button) return;
   const url = normalizeRelayUrl(button.dataset.addSuggestedRelay);
-  const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  read.add(url);
-  write.add(url);
-  await saveRelayPolicy([...read], [...write]);
-  await refresh();
+  await withButtonState(button, async () => {
+    const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    read.add(url);
+    write.add(url);
+    await saveRelayPolicy([...read], [...write]);
+    els.relayActivity.textContent = `Added ${url} to relay policy as read/write. Nothing was published.`;
+    await refresh();
+  });
 });
 
 els.relayTruth.addEventListener('click', async (event) => {
@@ -1083,31 +1402,58 @@ els.relayTruth.addEventListener('click', async (event) => {
   if (!button) return;
   const url = normalizeRelayUrl(button.dataset.addPublicRelay);
   const roles = String(button.dataset.publicRoles || 'read/write');
-  const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
-  if (roles.includes('read')) read.add(url);
-  if (roles.includes('write')) write.add(url);
-  if (!roles.includes('read') && !roles.includes('write')) read.add(url);
-  await saveRelayPolicy([...read], [...write]);
-  await refresh();
+  await withButtonState(button, async () => {
+    const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    if (roles.includes('read')) read.add(url);
+    if (roles.includes('write')) write.add(url);
+    if (!roles.includes('read') && !roles.includes('write')) read.add(url);
+    await saveRelayPolicy([...read], [...write]);
+    els.relayActivity.textContent = `Added ${url} (${roles}) from published state into relay policy. Nothing was published.`;
+    await refresh();
+  });
 });
 
-document.querySelector('#scan-relays').addEventListener('click', async () => {
-  els.relayActivity.textContent = 'Scanning configured relays and comparing newest published kind:10002 relay list against local policy...';
-  await api('relays/scan', { method: 'POST' });
-  await refresh();
+document.querySelector('#scan-relays').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.relayActivity.textContent = 'Scanning configured relays and comparing newest published kind:10002 relay list against local policy...';
+    await api('relays/scan', { method: 'POST' });
+    await refresh();
+  });
 });
 
-document.querySelector('#publish-relays').addEventListener('click', async () => {
-  els.relayActivity.textContent = 'Signing local relay policy as kind:10002 and publishing to write relays...';
-  const result = await api('relays/publish', { method: 'POST' });
-  els.relayActivity.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:10002 relay list');
-  await refresh();
+document.querySelector('#publish-relays').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.relayActivity.textContent = 'Signing relay policy as kind:10002 and publishing to write relays...';
+    const result = await api('relays/publish', { method: 'POST' });
+    els.relayActivity.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:10002 relay list');
+    await refresh();
+  });
 });
 
-document.querySelector('#create-backup').addEventListener('click', async () => {
-  await api('backups', { method: 'POST' });
-  await refresh();
+document.querySelector('#create-backup').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    await api('backups', { method: 'POST' });
+    restoreStatus.textContent = 'Backup created on the server data volume. Your nsec is not included.';
+    await refresh();
+  });
+});
+
+els.backupList.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-backup-download]');
+  if (!button) return;
+  await withButtonState(button, async () => {
+    const filename = button.dataset.backupDownload;
+    const response = await fetch(`./api/v1/backups/download/${encodeURIComponent(filename)}`, { headers: authHeaders({ 'content-type': undefined }) });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
 });
 
 const restoreFileInput = document.querySelector('#restore-file');
@@ -1141,15 +1487,17 @@ restoreStatus.addEventListener('click', async (e) => {
     return;
   }
   if (e.target.id === 'restore-confirm-yes' && pendingRestore) {
-    try {
-      const result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestore.data) });
-      restoreStatus.textContent = `Restored: ${result.restored.join(', ')}`;
-      pendingRestore = null;
-      await refresh();
-    } catch (err) {
-      restoreStatus.textContent = `Restore failed: ${err.message}`;
-      pendingRestore = null;
-    }
+    await withButtonState(e.target, async () => {
+      try {
+        const result = await api('backups/restore', { method: 'POST', body: JSON.stringify(pendingRestore.data) });
+        restoreStatus.textContent = `Restored: ${result.restored.join(', ')}`;
+        pendingRestore = null;
+        await refresh();
+      } catch (err) {
+        restoreStatus.textContent = `Restore failed: ${err.message}`;
+        pendingRestore = null;
+      }
+    });
   }
 });
 
@@ -1188,13 +1536,17 @@ function readTuning() {
 
 tuningForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await api('tuning', { method: 'PUT', body: JSON.stringify(readTuning()) });
-  await refresh();
+  await withButtonState(tuningForm.querySelector('button[type="submit"]'), async () => {
+    await api('tuning', { method: 'PUT', body: JSON.stringify(readTuning()) });
+    await refresh();
+  });
 });
 
-document.querySelector('#tuning-reset').addEventListener('click', async () => {
-  await api('tuning', { method: 'PUT', body: JSON.stringify(defaultTuning) });
-  await refresh();
+document.querySelector('#tuning-reset').addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    await api('tuning', { method: 'PUT', body: JSON.stringify(defaultTuning) });
+    await refresh();
+  });
 });
 
 els.tabs.forEach((tab) => {
@@ -1216,8 +1568,7 @@ async function saveRelayPolicy(read, write) {
     method: 'PUT',
     body: JSON.stringify({
       read: [...new Set(read)].sort().join('\n'),
-      write: [...new Set(write)].sort().join('\n'),
-      private: els.relayForm.elements.private.value
+      write: [...new Set(write)].sort().join('\n')
     })
   });
 }
@@ -1228,6 +1579,75 @@ function escapeHtml(value) {
 
 function cssUrl(value) {
   return String(value ?? '').replace(/["\\]/g, '');
+}
+
+async function renderTokens() {
+  const list = document.querySelector('#token-list');
+  if (!list) return;
+  try {
+    const { tokens } = await api('api-tokens');
+    if (els.tokenCount) els.tokenCount.textContent = String(tokens.filter((token) => !token.revokedAt).length);
+    if (!tokens.length) {
+      list.textContent = 'No tokens yet.';
+      list.className = 'list empty';
+      return;
+    }
+    list.className = 'list scroll-window';
+    list.innerHTML = tokens.map((token) => `
+      <div class="row">
+        <div>
+          <strong>${escapeHtml(token.name)}</strong>
+          <small>${token.scopes.map(escapeHtml).join(', ') || 'no scopes'} — created ${new Date(token.createdAt).toLocaleString()}${token.lastUsedAt ? `, last used ${new Date(token.lastUsedAt).toLocaleString()}` : ', never used'}</small>
+        </div>
+        <div>
+          ${token.revokedAt ? '<small>revoked</small>' : `<button class="button ghost" type="button" data-token-revoke="${escapeHtml(token.id)}">Revoke</button>`}
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    list.textContent = String(error.message || error);
+  }
+}
+
+const tokenCreateForm = document.querySelector('#token-create-form');
+if (tokenCreateForm) {
+  const adminBox = tokenCreateForm.querySelector('input[name="scope-all"]');
+  const scopeBoxes = [...tokenCreateForm.querySelectorAll('input[name="scope"]')];
+  adminBox.addEventListener('change', () => {
+    scopeBoxes.forEach((box) => { box.disabled = adminBox.checked; });
+  });
+  tokenCreateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = tokenCreateForm.elements.name.value.trim();
+    const scopes = adminBox.checked
+      ? ['admin']
+      : [
+          ...scopeBoxes.filter((box) => box.checked).map((box) => box.value),
+          ...tokenCreateForm.elements.extra.value.split(/[\s,]+/).filter(Boolean)
+        ];
+    const output = document.querySelector('#token-created');
+    output.style.display = 'block';
+    if (!scopes.length) {
+      output.textContent = 'Pick at least one scope (or Full access).';
+      return;
+    }
+    try {
+      const created = await api('api-tokens', { method: 'POST', body: JSON.stringify({ name, scopes }) });
+      output.textContent = `Token for ${created.name} — copy it now, it is shown only once:\n${created.token}`;
+      tokenCreateForm.reset();
+      scopeBoxes.forEach((box) => { box.disabled = false; });
+      await renderTokens();
+    } catch (error) {
+      output.textContent = String(error.message || error);
+    }
+  });
+  document.querySelector('#token-list').addEventListener('click', async (event) => {
+    const id = event.target.dataset.tokenRevoke;
+    if (!id) return;
+    await api(`api-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await renderTokens();
+  });
+  renderTokens();
 }
 
 refresh().catch((error) => {

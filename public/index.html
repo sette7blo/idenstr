@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=following-bulk-cleanup-1" />
+  <link rel="stylesheet" href="./styles.css?v=phase3-cards-1" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -31,6 +31,7 @@
     </section>
 
     <section id="overview" class="dashboard-shell view" data-view="overview">
+      <div class="card-group-label">Identity<small>Who you are on Nostr</small></div>
       <section class="main-grid">
         <article class="panel wide public-profile-card">
           <div id="profile-banner" class="profile-banner" role="img" aria-label="Nostr profile banner"></div>
@@ -39,65 +40,49 @@
             <div class="panel-head"><span>Public profile</span><strong id="profile-event">kind:0</strong></div>
             <h2 id="profile-display-name">Loading profile</h2>
             <code id="npub-value" class="profile-npub">loading</code>
+            <div id="profile-contacts" class="profile-contacts"></div>
             <p id="profile-summary">Loading profile.</p>
             <a href="#profile" data-tab="profile">Edit profile</a>
           </div>
         </article>
         <article class="panel metric"><span class="metric-label">Following</span><strong id="following-count">0</strong><p>Intentional follows, no follower analytics.</p><a href="#following" data-tab="following">Manage follows</a></article>
-        <article class="panel metric"><span class="metric-label">Relays</span><strong id="relay-count">0</strong><p>Read/write public relay policy plus local vault.</p><a href="#relays" data-tab="relays">Check relays</a></article>
-        <article class="panel metric"><span class="metric-label">Backups</span><strong id="backup-count">0</strong><p>Public-event backup manifests; nsec excluded unless encrypted.</p><a href="#backups" data-tab="backups">Backup state</a></article>
+        <article class="panel metric"><span class="metric-label">Muted</span><strong id="mute-count">0</strong><p>People, threads, hashtags, and words suppressed across apps.</p><a href="#mutes" data-tab="mutes">Manage mutes</a></article>
+        <article class="panel metric"><span class="metric-label">Public relays</span><strong id="relay-count">0</strong><p>Read/write relay policy for distribution to the network.</p><a href="#relays" data-tab="relays">Check relays</a></article>
+        <article class="panel metric"><span class="metric-label">Private relay</span><strong id="private-relay-indicator">—</strong><p>Your canonical signed-event vault, LAN-only by default.</p><a href="#private-relay" data-tab="private-relay">Open vault</a></article>
       </section>
-      <details class="tuning-panel" id="tuning-panel">
-        <summary>Tuning</summary>
-        <form id="tuning-form" class="tuning-grid">
-          <fieldset>
-            <legend>Discovery</legend>
-            <label>Candidates to rank <input type="number" name="discover.candidates" min="5" max="100" /></label>
-            <label>Results to show <input type="number" name="discover.results" min="1" max="50" /></label>
-            <label>Relay suggestions <input type="number" name="relaySuggestions" min="1" max="20" /></label>
-          </fieldset>
-          <fieldset>
-            <legend>Engagement scoring weights</legend>
-            <label>Post <input type="number" name="engagement.weights.post" min="0" max="20" /></label>
-            <label>Repost <input type="number" name="engagement.weights.repost" min="0" max="20" /></label>
-            <label>Reaction <input type="number" name="engagement.weights.reaction" min="0" max="20" /></label>
-            <label>Zap <input type="number" name="engagement.weights.zap" min="0" max="20" /></label>
-          </fieldset>
-          <fieldset>
-            <legend>Engagement tier thresholds</legend>
-            <label>High (score >=) <input type="number" name="engagement.thresholds.high" min="1" max="100" /></label>
-            <label>Engaged (score >=) <input type="number" name="engagement.thresholds.engaged" min="1" max="100" /></label>
-          </fieldset>
-          <fieldset>
-            <legend>Activity tiers (days since last activity)</legend>
-            <label>Very active (<=) <input type="number" name="activity.veryActive" min="1" max="30" /></label>
-            <label>Active (<=) <input type="number" name="activity.active" min="1" max="60" /></label>
-            <label>Quiet (<=) <input type="number" name="activity.quiet" min="1" max="180" /></label>
-            <label>Inactive (<=) <input type="number" name="activity.inactive" min="1" max="365" /></label>
-          </fieldset>
-          <div class="tuning-actions">
-            <button class="button primary" type="submit">Save tuning</button>
-            <button class="button ghost" type="button" id="tuning-reset">Reset to defaults</button>
-          </div>
-        </form>
-      </details>
+      <div class="card-group-label">Settings<small>How this server runs</small></div>
+      <section class="main-grid">
+        <article class="panel metric"><span class="metric-label">Connected apps</span><strong id="token-count">—</strong><p>Scoped tokens that let your other *str apps act through this identity.</p><a href="#tokens" data-tab="tokens">Manage access</a></article>
+        <article class="panel metric"><span class="metric-label">Backups</span><strong id="backup-count">0</strong><p>One file bundling your app database and private relay vault; nsec excluded.</p><a href="#backups" data-tab="backups">Backup state</a></article>
+        <article class="panel metric"><span class="metric-label">Activity log</span><strong id="audit-count">0</strong><p>Recent signing, publishing, and config actions on this server.</p><a href="#audit" data-tab="audit">View log</a></article>
+        <article class="panel metric"><span class="metric-label">Tuning</span><strong class="metric-note">server config</strong><p>Discovery, engagement scoring, and activity-tier parameters.</p><a href="#tuning" data-tab="tuning">Adjust</a></article>
+      </section>
     </section>
 
     <section id="profile" class="workbench panel view" data-view="profile">
       <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
       <div class="panel-head"><span>Canonical kind:0 profile</span><strong>draft-local</strong></div>
+      <div class="state-strip" data-strip="profile" aria-label="Where this profile currently lives">
+        <span class="state-seg" data-store="draft">Draft</span>
+        <span class="state-seg" data-store="private">Private relay</span>
+        <span class="state-seg" data-store="public">Public relays</span>
+      </div>
       <form id="profile-form" class="form-grid">
         <label>Name<input name="name" autocomplete="off" /></label>
         <label>Display name<input name="displayName" autocomplete="off" /></label>
         <label>Website<input name="website" autocomplete="off" /></label>
         <label>Picture URL<input name="picture" autocomplete="off" /></label>
+        <label>NIP-05 identifier<input name="nip05" autocomplete="off" placeholder="you@yourdomain.com" /></label>
+        <label>Lightning address<input name="lud16" autocomplete="off" placeholder="you@walletprovider.com" /></label>
         <label class="span-2">Banner URL<input name="banner" autocomplete="off" /></label>
+        <label class="span-2">LNURL (lud06, legacy — kept as-is)<input name="lud06" readonly /></label>
         <label class="span-2">About<textarea name="about" rows="4"></textarea></label>
-        <button class="button primary" type="submit">Save profile draft</button>
-        <button class="button ghost" type="button" id="publish-profile">Publish to write relays</button>
+        <button class="button primary" type="submit">Save draft</button>
+        <button class="button ghost" type="button" id="publish-profile">Publish</button>
         <button class="button ghost" type="button" id="scan-profile">Scan profile truth</button>
+        <button class="button ghost" type="button" id="verify-nip05">Verify NIP-05</button>
       </form>
-      <div id="profile-publish-status" class="terminal-mini">Save creates a local kind:0 draft. Publish signs it server-side and sends it to configured write relays.</div>
+      <div id="profile-publish-status" class="terminal-mini">Save stores a private kind:0 draft in the app database. Publish signs it server-side, writes it to your private relay, then pushes it to your public write relays.</div>
       <div class="subsection-head"><span>Profile truth</span><small>Local profile vs published relay state</small></div>
       <div id="profile-truth" class="profile-truth empty">Run scan to compare local profile against public relays.</div>
     </section>
@@ -105,6 +90,11 @@
     <section id="following" class="workbench panel view" data-view="following">
       <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
       <div class="panel-head"><span>Canonical kind:3 following</span><strong id="following-event">draft-local</strong></div>
+      <div class="state-strip" data-strip="following" aria-label="Where this following list currently lives">
+        <span class="state-seg" data-store="draft">Draft</span>
+        <span class="state-seg" data-store="private">Private relay</span>
+        <span class="state-seg" data-store="public">Public relays</span>
+      </div>
       <form id="follow-form" class="form-grid compact follow-add-inline">
         <label>Pubkey or npub<input name="pubkey" required autocomplete="off" placeholder="npub1... or hex pubkey" /></label>
         <label>Petname<input name="petname" autocomplete="off" placeholder="optional" /></label>
@@ -156,66 +146,184 @@
         <span id="following-progress-text">0/0</span>
       </div>
       <div id="following-state" class="terminal-mini following-terminal empty">$ idenstr following status
-state: local edits stay private until publish
-scan: compare local follows against public relays</div>
+state: kind:3 following list is saved as a private draft in the app database
+publish: signs kind:3, writes it to your private relay, then broadcasts to write relays
+scan: compare the draft follows against public relays</div>
       <div id="following-truth" class="following-truth empty">Run scan to compare local following list against public relays.</div>
       <div class="subsection-head"><span>Discover</span><small>Suggested follows from your mutual network</small></div>
       <div id="following-discover" class="following-discover empty">Run discover to find accounts followed by your mutuals that you may want to add.</div>
       <button class="button ghost" type="button" id="discover-following">Discover suggestions</button>
     </section>
 
+    <section id="mutes" class="workbench panel view" data-view="mutes">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Canonical kind:10000 mute list</span><strong id="mutes-event">draft-local</strong></div>
+      <p class="section-help">Your mute list is identity policy. Feedstr and other apps read this section to suppress muted people, threads, hashtags, and words everywhere, including notification tabs.</p>
+      <div class="state-strip" data-strip="mutes" aria-label="Where this mute list currently lives">
+        <span class="state-seg" data-store="draft">Draft</span>
+        <span class="state-seg" data-store="private">Private relay</span>
+        <span class="state-seg" data-store="public">Public relays</span>
+      </div>
+      <form id="mute-form" class="form-grid compact follow-add-inline">
+        <label>Type<select name="type"><option value="keyword">Keyword</option><option value="pubkey">Person/pubkey</option><option value="thread">Thread/event</option><option value="hashtag">Hashtag</option></select></label>
+        <label>Value<input name="value" required autocomplete="off" placeholder="word, #tag, npub, or event id" /></label>
+        <label>Label<input name="label" autocomplete="off" placeholder="optional note for you" /></label>
+        <button class="button primary" type="submit">Add mute</button>
+      </form>
+      <div id="mutes-list" class="list empty">No mutes yet.</div>
+      <div class="following-action-bar">
+        <div class="following-action-group" aria-label="Kind:10000 state actions">
+          <button class="button primary" type="button" id="save-mutes">Save</button>
+          <button class="button ghost" type="button" id="publish-mutes">Publish</button>
+        </div>
+      </div>
+      <div id="mutes-state" class="terminal-mini following-terminal empty">$ idenstr mutes status
+state: kind:10000 mute list is saved as a private draft in the app database
+publish: signs kind:10000, writes it to your private relay, then broadcasts to write relays
+apps: Feedstr filters feeds, threads, and notifications from this list</div>
+    </section>
+
     <section id="relays" class="workbench panel view" data-view="relays">
       <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
-      <div class="panel-head"><span>Relay policy and scan</span><strong>kind:10002</strong></div>
-      <p class="section-help">Local policy is Idenstr's draft/source of truth. Publish signs that policy as a Nostr kind:10002 relay-list event and sends it to your write relays. Scan checks public relay state, shows mismatches, and lets you add trusted published relays into local policy.</p>
+      <div class="panel-head"><span>Public Relays</span><strong>kind:10002</strong></div>
+      <p class="section-help">Your public relay policy: which relays Idenstr reads from and writes to. The draft policy is the source of truth. Publish signs it as a kind:10002 relay-list event, writes it to your private relay, then broadcasts it to your write relays. Scan checks public relay state, shows mismatches, and lets you add trusted published relays into the policy. Your private relay is managed separately under Private relay.</p>
+      <div class="state-strip" data-strip="relays" aria-label="Where this relay list currently lives">
+        <span class="state-seg" data-store="draft">Draft</span>
+        <span class="state-seg" data-store="private">Private relay</span>
+        <span class="state-seg" data-store="public">Public relays</span>
+      </div>
       <form id="relay-add-form" class="form-grid compact relay-add-form">
         <label>Relay URL<input name="url" placeholder="wss://relay.example" autocomplete="off" /></label>
         <label class="relay-role-toggle add-role"><input name="read" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Read</strong><small>Use for fetching</small></span></label>
         <label class="relay-role-toggle add-role"><input name="write" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Write</strong><small>Use for publishing</small></span></label>
         <button class="button primary" type="submit">Add relay</button>
       </form>
-      <div class="subsection-head"><span>Local relay policy</span><small>Ranked by follow popularity after scan</small></div>
+      <div class="subsection-head"><span>Relay policy</span><small>Ranked by follow popularity after scan</small></div>
       <div id="relay-list" class="relay-list empty">No relays configured.</div>
       <div class="subsection-head"><span>Top missing follow relays</span><small>Popular among follows, not in local policy</small></div>
       <div id="relay-suggestions" class="relay-suggestions empty">Run scan to discover popular relays you may want to add.</div>
       <form id="relay-form" class="form-grid relay-policy-form">
         <label class="relay-raw-field">Read relays<textarea name="read" rows="4"></textarea></label>
         <label class="relay-raw-field">Write relays<textarea name="write" rows="4"></textarea></label>
-        <label class="span-2">Private vault relay<input name="private" autocomplete="off" /></label>
-        <button class="button primary" type="submit">Save local relay policy</button>
+        <button class="button primary" type="submit">Save relay policy</button>
         <button class="button ghost" type="button" id="publish-relays">Publish relay list</button>
         <button class="button ghost" type="button" id="scan-relays">Scan & compare published state</button>
       </form>
       <div class="subsection-head"><span>Relay activity log</span><small>Publish and scan results</small></div>
-      <div id="relay-activity" class="terminal-mini">Save stores the local draft only. Publish broadcasts kind:10002. Scan checks configured relays and compares public truth with local policy.</div>
+      <div id="relay-activity" class="terminal-mini">Save stores the draft policy only. Publish signs kind:10002, writes it to your private relay, then broadcasts to your write relays. Scan checks configured relays and compares public truth with the draft policy.</div>
       <div id="relay-truth" class="relay-truth empty">Run scan to compare local policy against the newest published relay list.</div>
     </section>
 
-    <section id="backups" class="cards two view" data-view="backups">
-      <a class="section-back span-2" href="#overview" data-tab="overview">← Identity overview</a>
-      <article class="panel card span-2">
-        <h3>Backups</h3>
-        <p>Backups are saved to the server data volume. Your nsec is never included. You can download, restore, or upload a backup file from another instance.</p>
-        <div class="backup-actions">
-          <button class="button primary" id="create-backup">Create backup</button>
-          <input type="file" id="restore-file" accept=".json" style="display:none" />
-          <button class="button ghost" id="upload-backup">Upload backup file</button>
+    <section id="private-relay" class="workbench panel view" data-view="private-relay">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Private Relay</span><strong>your vault</strong></div>
+      <p class="section-help">Your private relay is the canonical vault for your signed events. It is local/LAN-only by default and is where Publish writes every event before it ever reaches public relays. Your other *str apps (Workstr, Feedstr) read from and sign into this same vault through Idenstr. This is a different store from your public relays: public relays distribute, the private relay owns.</p>
+      <form id="private-relay-form" class="form-grid">
+        <label class="span-2">Private relay URL (LAN)<input name="url" autocomplete="off" placeholder="ws://192.168.x.x:7777" /><small>Reachable by your other *str apps on the LAN. Saving rewrites .env — recreate the container (docker compose up -d) to apply.</small></label>
+        <button class="button primary" type="submit">Save private relay</button>
+        <button class="button ghost" type="button" id="inspect-private-relay">Refresh</button>
+      </form>
+      <div id="private-relay-status" class="terminal-mini">Connection status and vault contents load automatically when you open this section. Save stores the private relay URL in .env; Refresh re-reads the vault on demand.</div>
+      <div class="subsection-head"><span>Canonical events stored here</span><small>Signed events in your vault</small></div>
+      <div id="private-relay-events" class="relay-list empty">Connecting to your private relay…</div>
+      <p class="section-help">Backups bundle this vault together with your app database — see <a href="#backups" data-tab="backups">Backups</a>.</p>
+    </section>
+
+    <section id="backups" class="workbench panel view" data-view="backups">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Backups</span><strong>db + vault</strong></div>
+      <p>A backup is a single file bundling both your stores: the app database (profile, following, relay policy, tuning, API tokens, audit) <strong>and</strong> every signed event in your private relay. Restoring re-populates the vault. Your nsec is never included. Backups are saved to the server data volume; you can download, restore, or upload a backup from another instance.</p>
+      <ul class="backup-includes">
+        <li><span class="bi-dot db"></span>App database — profile, following, relays, tuning, tokens</li>
+        <li><span class="bi-dot vault"></span>Private relay — all canonical signed events (the vault)</li>
+        <li><span class="bi-dot excluded"></span>Never included — your nsec / private key</li>
+      </ul>
+      <div class="backup-actions">
+        <button class="button primary" id="create-backup">Create backup</button>
+        <input type="file" id="restore-file" accept=".json" style="display:none" />
+        <button class="button ghost" id="upload-backup">Upload backup file</button>
+      </div>
+      <div id="restore-status"></div>
+      <div id="backup-list" class="list empty">No backups yet.</div>
+    </section>
+
+    <section id="audit" class="workbench panel view" data-view="audit">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Activity log</span><strong>this server</strong></div>
+      <p class="section-help">A running record of signing, publishing, and configuration actions taken on this server — including calls made by your connected apps.</p>
+      <div id="audit-log" class="list empty">No activity yet.</div>
+    </section>
+
+    <section id="tokens" class="workbench panel view" data-view="tokens">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Connected apps</span><strong>scoped access</strong></div>
+      <p class="section-help">Your other <code>*str</code> apps (Feedstr, Workstr, Mealstr) act through this identity using scoped bearer tokens — each grants only the permissions you check below. The token value is shown once at creation; copy it into the consuming app's <code>.env</code>. Revoke any token to cut an app off immediately.</p>
+      <form id="token-create-form">
+          <input type="text" name="name" placeholder="app name, e.g. feedstr" required />
+          <div class="token-scopes">
+            <label><input type="checkbox" name="scope-all" /> <strong>Full access (admin) — everything, including token management</strong></label>
+            <label><input type="checkbox" name="scope" value="sign:kind:1" /> Sign notes (kind 1)</label>
+            <label><input type="checkbox" name="scope" value="sign:kind:6" /> Sign reposts (kind 6)</label>
+            <label><input type="checkbox" name="scope" value="sign:kind:7" /> Sign reactions (kind 7)</label>
+            <label><input type="checkbox" name="scope" value="sign:kind:5" /> Sign deletes / undo, e.g. unlike (kind 5)</label>
+            <label><input type="checkbox" name="scope" value="sign:kind:30078" /> Sign app data, e.g. Workstr sheets (kind 30078)</label>
+            <label><input type="checkbox" name="scope" value="publish:kind:1" /> <strong>Publish</strong> notes/summaries to relays (kind 1)</label>
+            <label><input type="checkbox" name="scope" value="profile:read" /> Read profile and identity</label>
+            <label><input type="checkbox" name="scope" value="relays:read" /> Read relay lists</label>
+            <label><input type="checkbox" name="scope" value="following:read" /> Read following list</label>
+            <label><input type="checkbox" name="scope" value="following:write" /> Follow / unfollow (publishes kind:3)</label>
+            <label><input type="checkbox" name="scope" value="mutes:read" /> Read mute list</label>
+            <label><input type="checkbox" name="scope" value="mutes:write" /> Mute / unmute (publishes kind:10000)</label>
+            <input type="text" name="extra" placeholder="extra scopes (optional), e.g. sign:kind:30023" />
+          </div>
+          <button class="button primary" type="submit">Create token</button>
+        </form>
+        <pre id="token-created" style="white-space: pre-wrap; display: none;"></pre>
+        <div id="token-list" class="list empty">No tokens yet.</div>
+    </section>
+
+    <section id="tuning" class="workbench panel view" data-view="tuning">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Tuning</span><strong>server config</strong></div>
+      <p class="tuning-lede">Parameters behind discovery, engagement scoring, and activity tiers. Defaults are sensible; adjust only if the tiers do not match how you read your follows.</p>
+      <form id="tuning-form" class="tuning-grid">
+        <fieldset>
+          <legend>Discovery</legend>
+          <p class="fieldset-note">How many candidates are fetched and ranked when discovering follows and relays, and how many make it onto the screen.</p>
+          <label>Candidates to rank <input type="number" name="discover.candidates" min="5" max="100" /></label>
+          <label>Results to show <input type="number" name="discover.results" min="1" max="50" /></label>
+          <label>Relay suggestions <input type="number" name="relaySuggestions" min="1" max="20" /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Engagement scoring weights</legend>
+          <p class="fieldset-note">How much each interaction type counts toward a follow's engagement score. Raise a weight to make that signal matter more.</p>
+          <label>Post <input type="number" name="engagement.weights.post" min="0" max="20" /></label>
+          <label>Repost <input type="number" name="engagement.weights.repost" min="0" max="20" /></label>
+          <label>Reaction <input type="number" name="engagement.weights.reaction" min="0" max="20" /></label>
+          <label>Zap <input type="number" name="engagement.weights.zap" min="0" max="20" /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Engagement tier thresholds</legend>
+          <p class="fieldset-note">Scores at or above these values place a follow in the High or Engaged tier; anything below is Low.</p>
+          <label>High (score >=) <input type="number" name="engagement.thresholds.high" min="1" max="100" /></label>
+          <label>Engaged (score >=) <input type="number" name="engagement.thresholds.engaged" min="1" max="100" /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Activity tiers (days since last activity)</legend>
+          <p class="fieldset-note">Days since a follow last did anything. Each tier covers up to its value; past the Inactive limit a follow counts as dormant.</p>
+          <label>Very active (<=) <input type="number" name="activity.veryActive" min="1" max="30" /></label>
+          <label>Active (<=) <input type="number" name="activity.active" min="1" max="60" /></label>
+          <label>Quiet (<=) <input type="number" name="activity.quiet" min="1" max="180" /></label>
+          <label>Inactive (<=) <input type="number" name="activity.inactive" min="1" max="365" /></label>
+        </fieldset>
+        <div class="tuning-actions">
+          <button class="button primary" type="submit">Save tuning</button>
+          <button class="button ghost" type="button" id="tuning-reset">Reset to defaults</button>
         </div>
-        <div id="restore-status"></div>
-        <div id="backup-list" class="list empty">No backups yet.</div>
-      </article>
-      <article class="panel card">
-        <h3>Audit trail</h3>
-        <div id="audit-log" class="list empty">No audit entries yet.</div>
-      </article>
-      <article class="panel card span-2">
-        <h3>App-linking, not a monolith</h3>
-        <p>Scoped tokens are here for future `*str` apps, but they stay out of the main identity flow.</p>
-        <a class="button ghost" href="./api/v1/api-tokens">List tokens API</a>
-      </article>
+      </form>
     </section>
   </main>
 
-  <script src="./app.js?v=following-bulk-cleanup-1" defer></script>
+  <script src="./app.js?v=phase3-cards-1" defer></script>
 </body>
 </html>
