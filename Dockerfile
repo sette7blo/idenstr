@@ -1,15 +1,18 @@
 FROM node:22-alpine AS runtime
 
 WORKDIR /app
-ENV NODE_ENV=production     IDENSTR_BIND_HOST=0.0.0.0     IDENSTR_BIND_PORT=3000     IDENSTR_TOKEN_STORE=/data/api-tokens.json     IDENSTR_STATE_STORE=/data/idenstr-state.json
+ENV NODE_ENV=production     IDENSTR_BIND_HOST=0.0.0.0     IDENSTR_BIND_PORT=3000     IDENSTR_DB_STORE=/data/idenstr.db     IDENSTR_TOKEN_STORE=/data/api-tokens.json     IDENSTR_STATE_STORE=/data/idenstr-state.json
 
 COPY package.json ./
 COPY src ./src
 COPY public ./public
 COPY README.md ./README.md
 
-RUN addgroup -S idenstr && adduser -S idenstr -G idenstr && mkdir -p /data && chown -R idenstr:idenstr /app /data
-USER idenstr
+# Run as the node user (uid 1000, gid 1000, already present in node:alpine) so the
+# host-mounted .env and the data volume line up with a standard host user and the
+# dashboard can persist edits to .env.
+RUN mkdir -p /data && chown -R node:node /app /data
+USER node
 
 EXPOSE 3000
 VOLUME ["/data"]

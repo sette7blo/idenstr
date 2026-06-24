@@ -1,6 +1,7 @@
 import { fetchAuthorProfiles, fetchCurrentRelayState, fetchFollowCurationEvents, fetchFollowRelayLists, publishEventToRelays } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
 import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, newestEvent, normalizePubkey, normalizeRelayUrl, parseJsonObject, pubkeyToNpub, randomUUID, saveState } from './state.js';
+import { storeEventLocally } from './localVault.js';
 
 export async function getFollowing() {
   return (await loadState()).following;
@@ -29,11 +30,15 @@ export async function addFollowing(entry) {
   return item;
 }
 
-export async function removeFollowing(id) {
+export async function removeFollowing(idOrPubkey) {
   const state = await loadState();
   const before = state.following.entries.length;
-  const removed = state.following.entries.find((entry) => entry.id === id);
-  state.following.entries = state.following.entries.filter((entry) => entry.id !== id);
+  // Match by internal id (Idenstr's own UI) or by pubkey (scoped apps like Feedstr,
+  // which only ever see pubkeys via the directory).
+  const target = normalizePubkey(idOrPubkey) || idOrPubkey;
+  const matches = (entry) => entry.id === idOrPubkey || (normalizePubkey(entry.pubkey) || entry.pubkey) === target;
+  const removed = state.following.entries.find(matches);
+  state.following.entries = state.following.entries.filter((entry) => !matches(entry));
   if (removed && state.following.directory) delete state.following.directory[normalizePubkey(removed.pubkey) || removed.pubkey];
   state.following.updatedAt = new Date().toISOString();
   state.following.event = buildCanonicalEvent(3, state.following.entries);
@@ -64,6 +69,14 @@ export async function publishFollowing() {
     content: ''
   });
   const relays = state.relays.write?.length ? state.relays.write : state.relays.read;
+  const local = await storeEventLocally(event);
+  if (!local.accepted) {
+    state.following.event = { id: event.id, kind: event.kind, created_at: event.created_at, status: 'local-write-failed', signed: true, event, localVault: local };
+    state.following.lastPublish = { at: new Date().toISOString(), ...state.following.event };
+    addAudit(state, 'following.publish_failed', `Local vault rejected/unreachable: ${local.message}`);
+    await saveState(state);
+    return { error: 'vault_unavailable', following: state.following, published: null };
+  }
   const published = await publishEventToRelays(event, relays, { timeoutMs: 6500 });
   state.following.event = {
     id: event.id,
@@ -79,12 +92,37 @@ export async function publishFollowing() {
       accepted: Boolean(result.accepted),
       latencyMs: result.latencyMs,
       message: result.message || result.error || ''
-    }))
+    })),
+    event,
+    localVault: local
   };
   state.following.lastPublish = { at: new Date().toISOString(), ...state.following.event };
   addAudit(state, published.ok ? 'following.published' : 'following.publish_failed', `${published.results.filter((result) => result.accepted).length}/${published.results.length} write relays accepted kind:3 following list`);
   await saveState(state);
   return { following: state.following, published };
+}
+
+// One-shot follow for scoped apps: add to the local-truth kind:3 (deduped) then sign
+// and broadcast it to the private vault + public relays. Idenstr stays the sole author
+// of the contact list, so a partial client view can never clobber it.
+export async function followAndPublish(entry) {
+  const pubkey = cleanString(entry?.pubkey, 140);
+  if (!pubkey) throw new Error('pubkey is required');
+  const norm = normalizePubkey(pubkey) || pubkey;
+  const state = await loadState();
+  const already = (state.following.entries ?? []).some((e) => (normalizePubkey(e.pubkey) || e.pubkey) === norm);
+  const added = already ? null : await addFollowing(entry);
+  const published = await publishFollowing();
+  return { added, already, ...published };
+}
+
+// One-shot unfollow: remove by pubkey then republish the kind:3.
+export async function unfollowAndPublish(pubkey) {
+  const clean = cleanString(pubkey, 140);
+  if (!clean) throw new Error('pubkey is required');
+  const removed = await removeFollowing(clean);
+  const published = await publishFollowing();
+  return { removed, ...published };
 }
 
 export async function scanFollowing() {

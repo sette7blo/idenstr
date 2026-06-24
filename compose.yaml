@@ -5,14 +5,51 @@
 
 services:
   idenstr:
-    image: dockersette/idenstr:latest
+    build: .
     container_name: idenstr
     restart: unless-stopped
+    # Run as your host user (default 1000:1000) so the bind-mounted .env stays
+    # writable when the dashboard saves the private relay URL.
+    user: "${UID:-1000}:${GID:-1000}"
     env_file: .env
+    environment:
+      IDENSTR_BIND_HOST: 0.0.0.0
+      # The one true private relay URL. Defaults to the internal service name as a
+      # bootstrap fallback; once the LAN IP is detected it is ws://<LAN_IP>:7777.
+      IDENSTR_PRIVATE_RELAY_URL: ${IDENSTR_PRIVATE_RELAY_URL:-ws://private-relay:7777}
+      # Where the app persists edits to the private relay URL. Bind-mounted below.
+      IDENSTR_ENV_FILE: /app/.env
     ports:
-      - "${IDENSTR_HOST_PORT:-3000}:3000"
+      - "${IDENSTR_HOST_BIND:-0.0.0.0}:${IDENSTR_HOST_PORT:-3000}:3000"
     volumes:
       - idenstr-data:/data
+      # Mounted writable so saving the private relay URL in the dashboard persists
+      # to .env. Must be readable+writable by the container user (chmod 660 .env).
+      - ./.env:/app/.env
+    depends_on:
+      - private-relay
+
+  private-relay:
+    image: dockurr/strfry:latest
+    container_name: idenstr-private-relay
+    restart: unless-stopped
+    # The vault is read-reachable, so write authority is enforced by pubkey, not
+    # by network isolation: the write policy accepts only events signed by this
+    # identity. IDENSTR_NPUB is the single source of truth for the owner key.
+    environment:
+      IDENSTR_OWNER_PUBKEY: ${IDENSTR_NPUB:-}
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    # Published on 0.0.0.0 by default so the private relay is reachable by your
+    # other *str apps across the LAN. The advertised URL is ws://<LAN_IP>:7777.
+    ports:
+      - "${IDENSTR_PRIVATE_RELAY_BIND:-0.0.0.0}:${IDENSTR_PRIVATE_RELAY_PORT:-7777}:7777"
+    volumes:
+      - idenstr-relay-data:/app/strfry-db
+      - ./relay/write-policy.py:/app/write-policy.py:ro
 
 volumes:
   idenstr-data:
+  idenstr-relay-data:

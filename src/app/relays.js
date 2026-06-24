@@ -1,19 +1,39 @@
 import { fetchCurrentRelayState, fetchFollowRelayLists, publishEventToRelays } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
 import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, normalizeRelays, normalizeRelayUrl, normalizePubkey, saveState } from './state.js';
+import { fetchAllEvents, storeEventLocally } from './localVault.js';
+import { updateEnvVar } from './envFile.js';
 
 export async function getRelays() {
-  return (await loadState()).relays;
+  const relays = (await loadState()).relays;
+  // The .env-configured URL is the source of truth, so it wins over any value
+  // persisted in older state (which may hold a stale/legacy default).
+  return { ...relays, private: process.env.IDENSTR_PRIVATE_RELAY_URL || relays.private || null };
 }
 
 export async function saveRelays(relays) {
   const state = await loadState();
+  const previousPrivate = process.env.IDENSTR_PRIVATE_RELAY_URL || '';
+  const nextPrivate = cleanString(relays.private, 200) || previousPrivate || null;
   state.relays = {
     read: normalizeRelays(relays.read),
     write: normalizeRelays(relays.write),
-    private: cleanString(relays.private, 200) || process.env.IDENSTR_PRIVATE_RELAY_URL || null,
+    private: nextPrivate,
     updatedAt: new Date().toISOString()
   };
+
+  // The private relay URL lives in .env (env_file is read once at container
+  // start). Persist it there when it changes, then tell the UI a recreate is
+  // needed for the running process to pick it up.
+  let restartRequired = false;
+  if (nextPrivate && nextPrivate !== previousPrivate) {
+    try {
+      await updateEnvVar('IDENSTR_PRIVATE_RELAY_URL', nextPrivate);
+      restartRequired = true;
+    } catch (error) {
+      addAudit(state, 'relays.env_write_failed', `Could not persist private relay URL to .env: ${error.message}`);
+    }
+  }
   state.relays.event = buildCanonicalEvent(10002, state.relays);
   state.relays.scan = [];
   state.relays.consistency = null;
@@ -27,7 +47,58 @@ export async function saveRelays(relays) {
   }
   addAudit(state, 'relays.updated', 'Relay policy updated, stale publish results cleared');
   await saveState(state);
-  return state.relays;
+  return { ...state.relays, restartRequired };
+}
+
+export async function getPrivateRelay() {
+  const url = process.env.IDENSTR_PRIVATE_RELAY_URL || (await loadState()).relays.private || null;
+  return { url, configured: Boolean(url) };
+}
+
+export async function savePrivateRelay(body) {
+  const state = await loadState();
+  const previous = process.env.IDENSTR_PRIVATE_RELAY_URL || '';
+  const next = cleanString(body?.url, 200) || null;
+  if (!next) return { url: previous || null, configured: Boolean(previous), restartRequired: false, error: 'empty_url' };
+  state.relays.private = next;
+  let restartRequired = false;
+  if (next !== previous) {
+    try {
+      await updateEnvVar('IDENSTR_PRIVATE_RELAY_URL', next);
+      restartRequired = true;
+      addAudit(state, 'private_relay.updated', `Private relay URL set to ${next}`);
+    } catch (error) {
+      addAudit(state, 'private_relay.env_write_failed', `Could not persist private relay URL to .env: ${error.message}`);
+    }
+  }
+  await saveState(state);
+  return { url: next, configured: true, restartRequired };
+}
+
+export async function inspectPrivateRelay() {
+  const url = process.env.IDENSTR_PRIVATE_RELAY_URL || '';
+  if (!url) return { ok: false, configured: false, url: null, message: 'private relay not configured', summary: null, events: [] };
+  const result = await fetchAllEvents({ relayUrl: url });
+  if (!result.ok) return { ok: false, configured: true, url, message: result.message, summary: null, events: [] };
+  const events = result.events.filter((event) => event && Number.isInteger(event.kind));
+  const byKind = {};
+  let latest = 0;
+  for (const event of events) {
+    byKind[event.kind] = (byKind[event.kind] ?? 0) + 1;
+    if ((event.created_at ?? 0) > latest) latest = event.created_at;
+  }
+  const rows = events
+    .map((event) => ({ id: event.id, kind: event.kind, created_at: event.created_at }))
+    .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+    .slice(0, 100);
+  return {
+    ok: true,
+    configured: true,
+    url,
+    message: `${events.length} signed events in your private relay`,
+    summary: { total: events.length, byKind, latest: latest ? new Date(latest * 1000).toISOString() : null },
+    events: rows
+  };
 }
 
 export async function publishRelays() {
@@ -41,6 +112,14 @@ export async function publishRelays() {
     content: ''
   });
   const relays = state.relays.write?.length ? state.relays.write : state.relays.read;
+  const local = await storeEventLocally(event);
+  if (!local.accepted) {
+    state.relays.event = { id: event.id, kind: event.kind, created_at: event.created_at, status: 'local-write-failed', signed: true, event, localVault: local };
+    state.relays.lastPublish = { at: new Date().toISOString(), ...state.relays.event };
+    addAudit(state, 'relays.publish_failed', `Local vault rejected/unreachable: ${local.message}`);
+    await saveState(state);
+    return { error: 'vault_unavailable', relays: state.relays, published: null };
+  }
   const published = await publishEventToRelays(event, relays, { timeoutMs: 6500 });
   state.relays.event = {
     id: event.id,
@@ -56,7 +135,9 @@ export async function publishRelays() {
       accepted: Boolean(result.accepted),
       message: result.message || result.error || '',
       latencyMs: result.latencyMs
-    }))
+    })),
+    event,
+    localVault: local
   };
   state.relays.lastPublish = { at: new Date().toISOString(), ...state.relays.event };
   state.relays.consistency = relayListConsistency(state.relays, event);

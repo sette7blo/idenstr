@@ -1,7 +1,9 @@
 import { createECDH, createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getStateValue, maybeMigrateJsonState, setStateValue } from './db.js';
+import { privateRelayUrl } from './system.js';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
@@ -10,20 +12,16 @@ const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
 export { randomUUID };
 
 export async function loadState() {
-  try {
-    return mergeDefaults(JSON.parse(await readFile(getStatePath(), 'utf8')));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    const state = defaultState();
-    await saveState(state);
-    return state;
-  }
+  const migrated = maybeMigrateJsonState((statePath) => JSON.parse(readFileSync(statePath, 'utf8')));
+  const saved = migrated ?? getStateValue('app');
+  if (saved) return mergeDefaults(saved);
+  const state = defaultState();
+  await saveState(state);
+  return state;
 }
 
 export async function saveState(state) {
-  const statePath = getStatePath();
-  await mkdir(dirname(statePath), { recursive: true });
-  await writeFile(statePath, JSON.stringify(state, null, 2));
+  setStateValue('app', state);
 }
 
 function getStatePath() {
@@ -47,7 +45,8 @@ function defaultState() {
   return {
     profile: { name: 'primary', displayName: 'Primary Nostr Identity', about: 'Canonical profile draft held by Idenstr.', website: '', picture: '', banner: '', updatedAt: now, event: buildCanonicalEvent(0, { name: 'primary' }) },
     following: { entries: [], directory: {}, directoryUpdatedAt: null, updatedAt: now, event: buildCanonicalEvent(3, []) },
-    relays: { read, write, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
+    mutes: { entries: [], updatedAt: now, event: buildCanonicalEvent(10000, []) },
+    relays: { read, write, private: privateRelayUrl() || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
     tuning: { ...DEFAULT_TUNING },
     backups: [],
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
@@ -56,7 +55,7 @@ function defaultState() {
 
 function mergeDefaults(state) {
   const defaults = defaultState();
-  return { ...defaults, ...state, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
+  return { ...defaults, ...state, mutes: { ...defaults.mutes, ...(state.mutes ?? {}) }, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
 }
 
 export function buildCanonicalEvent(kind, content) {
@@ -73,7 +72,6 @@ export function buildCanonicalEvent(kind, content) {
 
 export function addAudit(state, type, message) {
   state.audit.unshift({ at: new Date().toISOString(), type, message });
-  state.audit = state.audit.slice(0, 80);
 }
 
 export function cleanString(value, limit) {

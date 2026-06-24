@@ -12,7 +12,7 @@ test('iOS install metadata is present for add-to-home-screen usage', async () =>
   assert.match(html, /<meta name="apple-mobile-web-app-capable" content="yes"/);
   assert.match(html, /<meta name="apple-mobile-web-app-title" content="Idenstr"/);
   assert.match(html, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/);
-  assert.match(html, /<link rel="apple-touch-icon" href="\.\/icons\/apple-touch-icon\.svg"/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\.\/icons\/apple-touch-icon\.png"/);
 });
 
 test('web app manifest captures the iOS-friendly standalone shell', async () => {
@@ -51,14 +51,14 @@ test('dashboard exposes a clearer information hierarchy for messy early builds',
   assert.match(html, /section id="profile"/);
   assert.match(html, /section id="following"/);
   assert.match(html, /section id="relays"/);
-  assert.match(html, /Save local relay policy/);
+  assert.match(html, /Save relay policy/);
   assert.match(html, /Publish relay list/);
   assert.match(html, /Scan & compare published state/);
   assert.doesNotMatch(html, /Import from public relays/);
   assert.match(html, /Relay activity log/);
   assert.doesNotMatch(html, /relay-publish-status/);
   assert.doesNotMatch(html, /relay-scan/);
-  assert.match(html, /Local relay policy/);
+  assert.match(html, /Relay policy/);
   assert.match(html, /relay-truth/);
   assert.match(html, /Top missing follow relays/);
   assert.doesNotMatch(html, /Popularity among follows/);
@@ -88,5 +88,5 @@ test('dashboard exposes a clearer information hierarchy for messy early builds',
   assert.ok(html.indexOf('following-scroll-window') < html.indexOf('following-action-bar'), 'action bar should appear after the follow list');
   assert.ok(html.indexOf('following-action-bar') < html.indexOf('following-state'), 'terminal should appear after the action bar');
   assert.ok(html.indexOf('following-state') < html.indexOf('following-truth'), 'truth badge should appear after the terminal');
-  assert.match(html, /script src="\.\/app\.js\?v=following-bulk-cleanup-1"/);
+  assert.match(html, /script src="\.\/app\.js\?v=[\w-]+"/);
 });

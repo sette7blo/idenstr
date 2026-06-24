@@ -17,7 +17,7 @@ export function getSystemInfo() {
 }
 
 export function getHealth(config = {}) {
-  const privateRelayUrl = config.privateRelayUrl ?? process.env.IDENSTR_PRIVATE_RELAY_URL ?? '';
+  const url = config.privateRelayUrl ?? privateRelayUrl();
   const keyMode = config.keyMode ?? process.env.IDENSTR_KEY_MODE ?? 'env_nsec';
   return {
     status: 'ok',
@@ -27,8 +27,8 @@ export function getHealth(config = {}) {
     services: {
       app: 'ok',
       privateRelay: {
-        configured: Boolean(privateRelayUrl),
-        url: privateRelayUrl || null
+        configured: Boolean(url),
+        url: url || null
       },
       metadataStore: 'local-json-dev'
     }
@@ -49,6 +49,8 @@ export function getCapabilities() {
       'profile.write',
       'following.read',
       'following.write',
+      'mutes.read',
+      'mutes.write',
       'relays.read',
       'relays.write',
       'relays.scan',
@@ -57,6 +59,27 @@ export function getCapabilities() {
       'backups.create',
       'dashboard.interactive'
     ]
+  };
+}
+
+export function getStackTopology() {
+  const url = privateRelayUrl();
+  return {
+    app: 'idenstr',
+    version: APP_VERSION,
+    topology: {
+      privateRelay: {
+        configured: Boolean(url),
+        url: url || null,
+        role: 'write-ahead-vault'
+      },
+      signing: {
+        endpoint: '/api/v1/sign',
+        transport: 'rest',
+        nip46: false
+      }
+    },
+    capabilities: getCapabilities().capabilities
   };
 }
 
@@ -72,13 +95,26 @@ export function getOverview() {
     relays: {
       read: splitRelays(process.env.IDENSTR_DEFAULT_READ_RELAYS),
       write: splitRelays(process.env.IDENSTR_DEFAULT_WRITE_RELAYS),
-      private: process.env.IDENSTR_PRIVATE_RELAY_URL ?? null
+      private: privateRelayUrl() || null
     },
-    vault: { status: process.env.IDENSTR_PRIVATE_RELAY_URL ? 'configured' : 'not-configured' },
+    vault: { status: privateRelayUrl() ? 'configured' : 'not-configured' },
     backups: { lastBackup: null, encryptedSecretsRequired: process.env.IDENSTR_REQUIRE_ENCRYPTED_SECRET_BACKUPS !== 'false' }
   };
 }
 
 function splitRelays(value = '') {
   return value.split(',').map((relay) => relay.trim()).filter(Boolean);
+}
+
+// The single source of truth for where the private relay lives. Prefers the
+// explicitly configured URL; otherwise derives the LAN URL from the detected
+// host IP and relay port. Returns '' when neither is known.
+export function privateRelayUrl() {
+  const explicit = process.env.IDENSTR_PRIVATE_RELAY_URL ?? '';
+  if (explicit) return explicit.replace(/\/$/, '');
+
+  const lanIp = process.env.IDENSTR_LAN_IP ?? '';
+  const port = process.env.IDENSTR_PRIVATE_RELAY_PORT ?? '7777';
+  if (lanIp) return `ws://${lanIp}:${port}`;
+  return '';
 }

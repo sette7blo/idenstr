@@ -12,5 +12,6 @@ test('dashboard theme carries mysterious sovereign cyberpunk crypto visual langu
   assert.match(css, /cyber-grid/i);
   assert.match(html, /sovereign/i);
   assert.match(html, /Nostr identity control room/i);
-  assert.match(html, /Private vault relay/i);
+  assert.match(html, /Private relay URL \(LAN\)/i);
+  assert.match(html, /data-view="private-relay"/i);
 });

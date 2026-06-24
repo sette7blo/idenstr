@@ -1,6 +1,7 @@
 import { fetchCurrentRelayState, publishEventToRelays } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
 import { addAudit, buildCanonicalEvent, cleanString, getRequiredPubkey, loadState, newestEvent, normalizeRelays, parseJsonObject, saveState } from './state.js';
+import { storeEventLocally } from './localVault.js';
 
 export async function getProfile() {
   return (await loadState()).profile;
@@ -16,6 +17,9 @@ export async function saveProfile(profile) {
     website: cleanString(profile.website, 200),
     picture: cleanString(profile.picture, 500),
     banner: cleanString(profile.banner, 500),
+    nip05: cleanString(profile.nip05, 140),
+    lud16: cleanString(profile.lud16, 140),
+    lud06: cleanString(profile.lud06, 500),
     updatedAt: new Date().toISOString()
   };
   state.profile = { ...normalized, event: buildCanonicalEvent(0, profileContent(normalized)), truth: null };
@@ -45,6 +49,14 @@ export async function publishProfile() {
     content: JSON.stringify(profileContent(state.profile))
   });
   const relays = state.relays.write?.length ? state.relays.write : state.relays.read;
+  const local = await storeEventLocally(event);
+  if (!local.accepted) {
+    state.profile.event = { id: event.id, kind: event.kind, created_at: event.created_at, status: 'local-write-failed', signed: true, event, localVault: local };
+    state.profile.lastPublish = { at: new Date().toISOString(), ...state.profile.event };
+    addAudit(state, 'profile.publish_failed', `Local vault rejected/unreachable: ${local.message}`);
+    await saveState(state);
+    return { error: 'vault_unavailable', profile: state.profile, published: null };
+  }
   const published = await publishEventToRelays(event, relays, { timeoutMs: 6500 });
   state.profile.event = {
     id: event.id,
@@ -60,7 +72,9 @@ export async function publishProfile() {
       accepted: Boolean(result.accepted),
       latencyMs: result.latencyMs,
       message: result.message || result.error || ''
-    }))
+    })),
+    event,
+    localVault: local
   };
   state.profile.lastPublish = { at: new Date().toISOString(), ...state.profile.event };
   addAudit(state, published.ok ? 'profile.published' : 'profile.publish_failed', `${published.results.filter((result) => result.accepted).length}/${published.results.length} write relays accepted kind:0 profile`);
@@ -69,14 +83,50 @@ export async function publishProfile() {
 }
 
 export function profileContent(profile) {
+  // extra holds published kind:0 fields Idenstr does not manage; spreading it
+  // first means a publish can never silently drop them
   return {
+    ...(profile.extra ?? {}),
     name: profile.name || '',
     display_name: profile.displayName || profile.name || '',
     about: profile.about || '',
     website: profile.website || '',
     picture: profile.picture || '',
-    banner: profile.banner || ''
+    banner: profile.banner || '',
+    ...(profile.nip05 ? { nip05: profile.nip05 } : {}),
+    ...(profile.lud16 ? { lud16: profile.lud16 } : {}),
+    ...(profile.lud06 ? { lud06: profile.lud06 } : {})
   };
+}
+
+export async function verifyNip05() {
+  const state = await loadState();
+  const check = await checkNip05(state.profile.nip05 || '', getRequiredPubkey());
+  state.profile.nip05Check = { ...check, checkedAt: new Date().toISOString() };
+  addAudit(state, 'profile.nip05_checked', `NIP-05 ${state.profile.nip05 || 'unset'}: ${check.status}`);
+  await saveState(state);
+  return state.profile.nip05Check;
+}
+
+async function checkNip05(identifier, pubkey) {
+  if (!identifier) return { status: 'unset', detail: 'No NIP-05 identifier configured on the profile.' };
+  const at = identifier.lastIndexOf('@');
+  const name = at > 0 ? identifier.slice(0, at) : '_';
+  const domain = identifier.slice(at + 1);
+  if (at < 0 || !domain.includes('.')) return { status: 'invalid', detail: 'NIP-05 identifier must look like name@domain.' };
+  try {
+    const response = await fetch(`https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`, {
+      signal: AbortSignal.timeout(6500),
+      headers: { accept: 'application/json' }
+    });
+    if (!response.ok) return { status: 'error', detail: `HTTP ${response.status} from https://${domain}/.well-known/nostr.json` };
+    const mapped = (await response.json())?.names?.[name];
+    if (!mapped) return { status: 'missing', detail: `nostr.json on ${domain} has no entry for "${name}".` };
+    if (String(mapped).toLowerCase() !== pubkey.toLowerCase()) return { status: 'mismatch', detail: `nostr.json on ${domain} maps "${name}" to a different pubkey.` };
+    return { status: 'verified', detail: `${identifier} resolves to this identity's pubkey.` };
+  } catch (error) {
+    return { status: 'error', detail: error.name === 'TimeoutError' ? `Timed out fetching nostr.json from ${domain}.` : error.message };
+  }
 }
 
 export function profileTruth(profile, relayResults = []) {
@@ -143,7 +193,10 @@ function normalizeProfileContent(content = {}) {
     about: cleanString(content.about, 500),
     website: cleanString(content.website, 200),
     picture: cleanString(content.picture, 500),
-    banner: cleanString(content.banner, 500)
+    banner: cleanString(content.banner, 500),
+    nip05: cleanString(content.nip05, 140),
+    lud16: cleanString(content.lud16, 140),
+    lud06: cleanString(content.lud06, 500)
   };
 }
 

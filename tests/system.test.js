@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSystemInfo, getHealth, getCapabilities } from '../src/app/system.js';
+import { getSystemInfo, getHealth, getCapabilities, getStackTopology } from '../src/app/system.js';
 
 test('system info identifies Idenstr as the first modular *str app', () => {
   const info = getSystemInfo();
@@ -12,7 +12,7 @@ test('system info identifies Idenstr as the first modular *str app', () => {
 });
 
 test('health endpoint exposes service status without leaking secrets', () => {
-  const health = getHealth({ privateRelayUrl: 'ws://private-relay:8080', keyMode: 'env_nsec' });
+  const health = getHealth({ privateRelayUrl: 'ws://192.168.1.50:7777', keyMode: 'env_nsec' });
   assert.equal(health.status, 'ok');
   assert.equal(health.services.app, 'ok');
   assert.equal(health.services.privateRelay.configured, true);
@@ -29,3 +29,39 @@ test('capabilities include API-token-linkable identity scopes', () => {
   assert.ok(capabilities.capabilities.includes('relays.write'));
   assert.ok(capabilities.capabilities.includes('relays.import'));
 });
+
+test('stack topology exposes the private relay URL without secrets', () => {
+  const previousUrl = process.env.IDENSTR_PRIVATE_RELAY_URL;
+  try {
+    process.env.IDENSTR_PRIVATE_RELAY_URL = 'ws://192.168.1.50:7777';
+    const stack = getStackTopology();
+    assert.equal(stack.topology.privateRelay.url, 'ws://192.168.1.50:7777');
+    assert.equal(stack.topology.signing.endpoint, '/api/v1/sign');
+    assert.equal(stack.topology.signing.nip46, false);
+    assert.equal(JSON.stringify(stack).includes('nsec'), false);
+  } finally {
+    restoreEnv('IDENSTR_PRIVATE_RELAY_URL', previousUrl);
+  }
+});
+
+test('stack topology derives the private relay URL from the LAN IP when no URL is set', () => {
+  const previousUrl = process.env.IDENSTR_PRIVATE_RELAY_URL;
+  const previousIp = process.env.IDENSTR_LAN_IP;
+  const previousPort = process.env.IDENSTR_PRIVATE_RELAY_PORT;
+  try {
+    delete process.env.IDENSTR_PRIVATE_RELAY_URL;
+    process.env.IDENSTR_LAN_IP = '100.64.0.10';
+    process.env.IDENSTR_PRIVATE_RELAY_PORT = '7777';
+    const stack = getStackTopology();
+    assert.equal(stack.topology.privateRelay.url, 'ws://100.64.0.10:7777');
+  } finally {
+    restoreEnv('IDENSTR_PRIVATE_RELAY_URL', previousUrl);
+    restoreEnv('IDENSTR_LAN_IP', previousIp);
+    restoreEnv('IDENSTR_PRIVATE_RELAY_PORT', previousPort);
+  }
+});
+
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

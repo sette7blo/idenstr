@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { getHealth } from '../src/app/system.js';
 
 test('default key custody is .env nsec, not signer or docker secret', async () => {
-  const health = getHealth({ privateRelayUrl: 'ws://private-relay:8080' });
+  const health = getHealth({ privateRelayUrl: 'ws://192.168.1.50:7777' });
   assert.equal(health.keyMode, 'env_nsec');
 
   const envExample = await readFile(new URL('../.env.example', import.meta.url), 'utf8');

@@ -1,10 +1,13 @@
 import http from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getCapabilities, getHealth, getOverview, getSystemInfo } from './app/system.js';
-import { addFollowing, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getIdentity, getProfile, getRelays, publishFollowing, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, restoreBackup, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays } from './app/identity.js';
-import { TokenStore } from './app/tokenStore.js';
+import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInfo } from './app/system.js';
+import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, inspectPrivateRelay, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveMutes, savePrivateRelay, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays, verifyNip05 } from './app/identity.js';
+import { TokenStore, hasScope } from './app/tokenStore.js';
+import { authorizeAndSign } from './app/signingService.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const publicDir = join(root, 'public');
@@ -16,6 +19,7 @@ const host = process.env.IDENSTR_BIND_HOST ?? '0.0.0.0';
 export function createServer() {
   return http.createServer(async (req, res) => {
     try {
+      res.gzipOk = /\bgzip\b/.test(req.headers['accept-encoding'] ?? '');
       await route(req, res);
     } catch (error) {
       sendJson(res, 500, { error: 'internal_error', message: error.message });
@@ -25,9 +29,21 @@ export function createServer() {
 
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
-  if (req.method === 'GET' && url.pathname === '/api/v1/system/info') return sendJson(res, 200, getSystemInfo());
+  const auth = await authorizeRequest(req, url);
+  if (!auth.ok) {
+    if (auth.challenge) res.setHeader('WWW-Authenticate', 'Basic realm="Idenstr", charset="UTF-8"');
+    return sendJson(res, auth.status, auth.body);
+  }
+  req.principal = auth.principal;
   if (req.method === 'GET' && url.pathname === '/api/v1/system/health') return sendJson(res, 200, getHealth());
+  if (req.method === 'GET' && url.pathname === '/api/v1/whoami') return sendJson(res, 200, { principal: publicPrincipal(req.principal) });
+  if (req.method === 'POST' && url.pathname === '/api/v1/sign') {
+    const result = await authorizeAndSign({ principal: req.principal, unsignedEvent: await readJson(req) });
+    return sendJson(res, result.status, result.body);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/v1/system/info') return sendJson(res, 200, getSystemInfo());
   if (req.method === 'GET' && url.pathname === '/api/v1/capabilities') return sendJson(res, 200, getCapabilities());
+  if (req.method === 'GET' && url.pathname === '/api/v1/stack') return sendJson(res, 200, getStackTopology());
   if (req.method === 'GET' && url.pathname === '/api/v1/overview') return sendJson(res, 200, getOverview());
   if (req.method === 'GET' && url.pathname === '/api/v1/dashboard') return sendJson(res, 200, await getDashboard());
   if (req.method === 'GET' && url.pathname === '/api/v1/identity') return sendJson(res, 200, getIdentity());
@@ -35,6 +51,7 @@ async function route(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/v1/profile') return sendJson(res, 200, await saveProfile(await readJson(req)));
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/publish') return sendJson(res, 200, await publishProfile());
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/scan') return sendJson(res, 200, await scanProfile());
+  if (req.method === 'POST' && url.pathname === '/api/v1/profile/nip05/verify') return sendJson(res, 200, await verifyNip05());
   if (req.method === 'GET' && url.pathname === '/api/v1/following') return sendJson(res, 200, await getFollowing());
   if (req.method === 'POST' && url.pathname === '/api/v1/following') return sendJson(res, 201, await addFollowing(await readJson(req)));
   if (req.method === 'POST' && url.pathname === '/api/v1/following/save') return sendJson(res, 200, await saveFollowing());
@@ -46,6 +63,8 @@ async function route(req, res) {
     if (url.searchParams.get('stream') === '1') return streamGenerator(res, refreshFollowingAnalyticsStreaming());
     return sendJson(res, 200, await refreshFollowingAnalytics());
   }
+  if (req.method === 'POST' && url.pathname === '/api/v1/following/follow') return sendJson(res, 200, await followAndPublish(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/following/unfollow') return sendJson(res, 200, await unfollowAndPublish((await readJson(req))?.pubkey));
   if (req.method === 'POST' && url.pathname === '/api/v1/following/publish') return sendJson(res, 200, await publishFollowing());
   if (req.method === 'POST' && url.pathname === '/api/v1/following/scan') return sendJson(res, 200, await scanFollowing());
   if (req.method === 'POST' && url.pathname === '/api/v1/following/discover') return sendJson(res, 200, await discoverFollowSuggestions());
@@ -57,6 +76,27 @@ async function route(req, res) {
   if (req.method === 'PUT' && url.pathname === '/api/v1/relays') return sendJson(res, 200, await saveRelays(await readJson(req)));
   if (req.method === 'POST' && url.pathname === '/api/v1/relays/publish') return sendJson(res, 200, await publishRelays());
   if (req.method === 'POST' && url.pathname === '/api/v1/relays/scan') return sendJson(res, 200, await scanRelays());
+  if (req.method === 'GET' && url.pathname === '/api/v1/private-relay') return sendJson(res, 200, await getPrivateRelay());
+  if (req.method === 'PUT' && url.pathname === '/api/v1/private-relay') return sendJson(res, 200, await savePrivateRelay(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/private-relay/inspect') return sendJson(res, 200, await inspectPrivateRelay());
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/following/directory') return sendJson(res, 200, await getFollowingDirectory());
+  if (req.method === 'GET' && url.pathname === '/api/v1/mutes') return sendJson(res, 200, await getMutes());
+  if (req.method === 'POST' && url.pathname === '/api/v1/mutes') return sendJson(res, 201, await addMute(await readJson(req)));
+  if (req.method === 'PUT' && url.pathname === '/api/v1/mutes') return sendJson(res, 200, await saveMutes(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/mutes/mute') return sendJson(res, 200, await muteAndPublish(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/mutes/unmute') return sendJson(res, 200, await unmuteAndPublish((await readJson(req))?.idOrValue));
+  if (req.method === 'POST' && url.pathname === '/api/v1/mutes/publish') return sendJson(res, 200, await publishMutes());
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/v1/mutes/')) {
+    const id = decodeURIComponent(url.pathname.split('/').at(-1));
+    return sendJson(res, (await removeMute(id)) ? 200 : 404, { removed: true });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/v1/events/publish') {
+    const payload = await readJson(req);
+    const denied = denyPublish(req.principal, payload);
+    if (denied) return sendJson(res, denied.status, denied.body);
+    return sendJson(res, 200, await publishEvent(payload));
+  }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await (await import('./app/state.js')).loadState(); return sendJson(res, 200, state.tuning); }
   if (req.method === 'PUT' && url.pathname === '/api/v1/tuning') {
@@ -94,7 +134,7 @@ async function route(req, res) {
   if (req.method === 'GET' && url.pathname === '/api/v1/api-tokens') return sendJson(res, 200, { tokens: await tokenStore.listTokens() });
   if (req.method === 'POST' && url.pathname === '/api/v1/api-tokens') {
     const body = await readJson(req);
-    const created = await tokenStore.createToken(body.name, body.scopes ?? ['read:identity']);
+    const created = await tokenStore.createToken(body.name, body.scopes ?? []);
     return sendJson(res, 201, created);
   }
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/v1/api-tokens/')) {
@@ -105,14 +145,170 @@ async function route(req, res) {
   sendJson(res, 404, { error: 'not_found' });
 }
 
+async function authorizeRequest(req, url) {
+  // Health is always reachable without credentials: Docker healthchecks and
+  // linked apps probe it to confirm the service is up.
+  if (req.method === 'GET' && url.pathname === '/api/v1/system/health') {
+    return { ok: true, principal: { id: 'anonymous', name: 'anonymous', scopes: [] } };
+  }
+
+  // Branding assets the browser and iOS fetch without credentials: the favicon,
+  // the PWA manifest, and the home-screen / apple-touch icons. These are
+  // non-sensitive, and they must load even on the login screen — otherwise iOS
+  // falls back to a generated letter tile instead of the app icon. serveStatic
+  // rejects any path containing '..', so the /icons/ prefix cannot be escaped.
+  if ((req.method === 'GET' || req.method === 'HEAD') && isPublicAsset(url.pathname)) {
+    return { ok: true, principal: { id: 'anonymous', name: 'anonymous', scopes: [] } };
+  }
+
+  const header = req.headers.authorization ?? '';
+
+  // App-to-app callers (Feedstr and other *str apps) present a scoped bearer
+  // token. Scope checks apply to the versioned API surface.
+  const token = bearerToken(header);
+  if (token) {
+    const principal = await tokenStore.authenticate(token);
+    if (!principal) return { ok: false, status: 401, body: { error: 'unauthorized' } };
+    if (url.pathname.startsWith('/api/v1/')) {
+      const required = requiredScope(req.method, url.pathname);
+      if (required && !hasScope(principal.scopes, required)) {
+        return { ok: false, status: 403, body: { error: 'scope_denied', required } };
+      }
+    }
+    return { ok: true, principal };
+  }
+
+  // The human dashboard authenticates with HTTP Basic credentials from
+  // IDENSTR_AUTH_USER / IDENSTR_AUTH_PASSWORD. The browser supplies and caches
+  // them, so the frontend stores nothing and sends no Authorization header of
+  // its own. Auth is independent of how the port is bound.
+  if (authConfigured()) {
+    const basic = basicCredentials(header);
+    if (basic && checkBasicAuth(basic)) {
+      return { ok: true, principal: { id: 'dashboard', name: basic.user, scopes: ['admin'], type: 'dashboard' } };
+    }
+    return { ok: false, status: 401, body: { error: 'unauthorized' }, challenge: true };
+  }
+
+  // No dashboard credentials configured. This is only reachable on a
+  // loopback-bound dev box: the startup guard refuses to boot a non-loopback
+  // deployment without credentials, so LAN/mesh installs never land here.
+  if (url.pathname === '/api/v1/sign') {
+    return { ok: false, status: 401, body: { error: 'unauthorized', detail: 'signing requires a bearer token with a sign:kind scope' } };
+  }
+  return { ok: true, principal: { id: 'dashboard', name: 'dashboard', scopes: ['admin'], type: 'dashboard' } };
+}
+
+function isPublicAsset(pathname) {
+  return pathname === '/manifest.webmanifest' ||
+    pathname === '/favicon.ico' ||
+    pathname.startsWith('/icons/');
+}
+
+function bearerToken(header) {
+  const match = String(header).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+function basicCredentials(header) {
+  const match = String(header).match(/^Basic\s+(.+)$/i);
+  if (!match) return null;
+  let decoded = '';
+  try {
+    decoded = Buffer.from(match[1].trim(), 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+  const separator = decoded.indexOf(':');
+  if (separator === -1) return null;
+  return { user: decoded.slice(0, separator), pass: decoded.slice(separator + 1) };
+}
+
+export function authConfigured() {
+  return Boolean((process.env.IDENSTR_AUTH_USER ?? '') && (process.env.IDENSTR_AUTH_PASSWORD ?? ''));
+}
+
+function checkBasicAuth({ user, pass }) {
+  return constantTimeEqual(user, process.env.IDENSTR_AUTH_USER ?? '') &&
+    constantTimeEqual(pass, process.env.IDENSTR_AUTH_PASSWORD ?? '');
+}
+
+function constantTimeEqual(left, right) {
+  const a = createHash('sha256').update(String(left)).digest();
+  const b = createHash('sha256').update(String(right)).digest();
+  return timingSafeEqual(a, b);
+}
+
+export function isLoopbackBind(bind) {
+  const value = String(bind ?? '').trim().toLowerCase();
+  return value === '' || value === 'localhost' || value === '::1' || value.startsWith('127.');
+}
+
+function publicPrincipal(principal) {
+  if (!principal) return null;
+  return { id: principal.id, name: principal.name, scopes: principal.scopes, rateLimit: principal.rateLimit, type: principal.type };
+}
+
+function requiredScope(method, pathname) {
+  if (pathname === '/api/v1/whoami') return null;
+  if (pathname === '/api/v1/sign') return null;
+  if (pathname === '/api/v1/system/info' || pathname === '/api/v1/capabilities' || pathname === '/api/v1/overview' || pathname === '/api/v1/dashboard') return 'admin';
+  if (pathname === '/api/v1/stack') return 'relays:read';
+  if (pathname.startsWith('/api/v1/api-tokens')) return 'admin';
+  if (pathname.startsWith('/api/v1/backups')) return 'admin';
+  if (pathname === '/api/v1/tuning') return method === 'GET' ? 'admin' : 'admin';
+  if (pathname === '/api/v1/identity' || pathname === '/api/v1/profile') return method === 'GET' ? 'profile:read' : 'admin';
+  if (pathname.startsWith('/api/v1/profile/')) return 'admin';
+  if (pathname === '/api/v1/relays') return method === 'GET' ? 'relays:read' : 'admin';
+  if (pathname.startsWith('/api/v1/relays/')) return 'admin';
+  if (pathname === '/api/v1/following/directory') return 'following:read';
+  if (pathname === '/api/v1/following') return method === 'GET' ? 'following:read' : 'admin';
+  // Scoped apps (e.g. Feedstr) may follow/unfollow with following:write; the heavier
+  // identity operations (scan, discover, analytics, save, bulk profile refresh) stay admin.
+  if (pathname === '/api/v1/following/follow' || pathname === '/api/v1/following/unfollow') return 'following:write';
+  if (pathname.startsWith('/api/v1/following/')) return 'admin';
+  if (pathname === '/api/v1/mutes') return method === 'GET' ? 'mutes:read' : 'admin';
+  if (pathname === '/api/v1/mutes/mute' || pathname === '/api/v1/mutes/unmute') return 'mutes:write';
+  if (pathname.startsWith('/api/v1/mutes/')) return 'admin';
+  // Publishing is authorized per-kind inside the route (denyPublish), mirroring
+  // how /sign authorizes per sign:kind scope, so scoped apps can publish without admin.
+  if (pathname === '/api/v1/events/publish') return null;
+  return 'admin';
+}
+
+// Sign-and-publish authorization for app tokens. Admin bypasses. Scoped tokens
+// need publish:events or publish:kind:<n>, and may not publish Idenstr-owned
+// identity kinds (those have dedicated endpoints).
+const PUBLISH_OWNED_KINDS = new Set([0, 3, 10000, 10002]);
+function denyPublish(principal, payload) {
+  const scopes = principal?.scopes ?? [];
+  if (scopes.includes('admin')) return null;
+  const kind = Number(payload?.kind);
+  if (!Number.isInteger(kind) || kind < 0) return { status: 400, body: { error: 'invalid_event', detail: 'kind must be a non-negative integer' } };
+  if (PUBLISH_OWNED_KINDS.has(kind)) return { status: 403, body: { error: 'owned_kind_denied', detail: 'identity kinds must use their dedicated endpoints' } };
+  if (scopes.includes('publish:events') || scopes.includes(`publish:kind:${kind}`)) return null;
+  return { status: 403, body: { error: 'scope_denied', required: `publish:kind:${kind}` } };
+}
+
 async function serveStatic(pathname, res, headOnly = false) {
   const normalized = pathname === '/' ? '/index.html' : pathname;
   if (normalized.includes('..')) return sendJson(res, 400, { error: 'bad_path' });
   const filePath = join(publicDir, normalized);
   try {
     const data = await readFile(filePath);
-    res.writeHead(200, { 'Content-Type': contentType(filePath), 'Cache-Control': cacheControl(filePath) });
-    if (headOnly) return res.end();
+    const type = contentType(filePath);
+    const headers = { 'Content-Type': type, 'Cache-Control': cacheControl(filePath), 'Vary': 'Accept-Encoding' };
+    const compressible = /^(text\/|application\/(javascript|json)|image\/svg)/.test(type);
+    if (headOnly) {
+      res.writeHead(200, headers);
+      return res.end();
+    }
+    if (res.gzipOk && compressible && data.length > 1024) {
+      headers['Content-Encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      return res.end(gzipSync(data));
+    }
+    res.writeHead(200, headers);
     res.end(data);
   } catch (error) {
     if (error.code === 'ENOENT') return sendJson(res, 404, { error: 'not_found' });
@@ -127,7 +323,10 @@ function contentType(filePath) {
     '.css': 'text/css; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
-    '.svg': 'image/svg+xml; charset=utf-8'
+    '.svg': 'image/svg+xml; charset=utf-8',
+    '.webmanifest': 'application/manifest+json; charset=utf-8',
+    '.png': 'image/png',
+    '.ico': 'image/x-icon'
   }[ext] ?? 'application/octet-stream';
 }
 
@@ -145,8 +344,15 @@ async function readJson(req) {
 }
 
 function sendJson(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(payload, null, 2));
+  const body = Buffer.from(JSON.stringify(payload));
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Vary': 'Accept-Encoding' };
+  if (res.gzipOk && body.length > 1024) {
+    headers['Content-Encoding'] = 'gzip';
+    res.writeHead(status, headers);
+    return res.end(gzipSync(body));
+  }
+  res.writeHead(status, headers);
+  res.end(body);
 }
 
 function clampInt(value, min, max, fallback) {
@@ -172,7 +378,18 @@ async function streamGenerator(res, generator) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const externalBind = process.env.IDENSTR_HOST_BIND ?? process.env.IDENSTR_BIND_HOST ?? host;
+  if (!authConfigured() && !isLoopbackBind(externalBind)) {
+    console.error(`Idenstr refuses to start: it is bound to ${externalBind} (reachable beyond localhost) but no dashboard credentials are set.`);
+    console.error('Set IDENSTR_AUTH_USER and IDENSTR_AUTH_PASSWORD in .env, or bind to 127.0.0.1 for local-only development.');
+    process.exit(1);
+  }
   createServer().listen(port, host, () => {
     console.log(`Idenstr listening on http://${host}:${port}`);
+    if (authConfigured()) {
+      console.log('Dashboard requires HTTP Basic credentials (IDENSTR_AUTH_USER/IDENSTR_AUTH_PASSWORD). Apps authenticate with scoped bearer tokens.');
+    } else {
+      console.log('Dashboard is open (no IDENSTR_AUTH_USER/IDENSTR_AUTH_PASSWORD set) and bound to localhost. Set credentials before exposing it on a LAN or mesh.');
+    }
   });
 }
