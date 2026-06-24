@@ -72,6 +72,9 @@ export function buildCanonicalEvent(kind, content) {
 
 export function addAudit(state, type, message) {
   state.audit.unshift({ at: new Date().toISOString(), type, message });
+  // Cap the trail: it lives inside the single state blob, so an uncapped list
+  // would grow without bound and get re-serialized on every save.
+  state.audit = state.audit.slice(0, 80);
 }
 
 export function cleanString(value, limit) {
