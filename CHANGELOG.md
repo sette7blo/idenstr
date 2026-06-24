@@ -10,6 +10,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 ---
 
 ## [Unreleased]
+
+## [v1.0.1] — 2026-06-24
 ### Changed
 - Performance and hardening pass. Relay fan-out for follow analytics and discovery now runs through a bounded connection pool instead of opening one WebSocket per relay×author-batch (which could mean hundreds of simultaneous connections). Backup restore writes every vault event over a single connection rather than a fresh socket per event. The follow-directory profile cache moved to its own database row, so routine state writes no longer re-serialize it. Prepared SQL statements are reused, token authentication uses the indexed hash lookup, and request bodies are size-capped.
 ### Security
@@ -79,7 +81,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.1...HEAD
+[v1.0.1]: https://github.com/sette7blo/idenstr/compare/v1.0.0...v1.0.1
 [v1.0.0]: https://github.com/sette7blo/idenstr/compare/v0.1.1...v1.0.0
 [v0.1.1]: https://github.com/sette7blo/idenstr/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/sette7blo/idenstr/releases/tag/v0.1.0
