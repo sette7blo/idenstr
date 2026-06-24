@@ -10,6 +10,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 ---
 
 ## [Unreleased]
+
+## [v1.0.0] — 2026-06-24
 ### Added
 - First-class kind:10000 mute-list management: Idenstr now has a dedicated Muted section, `GET/POST/PUT/DELETE /api/v1/mutes` draft APIs, scoped `mutes:read` / `mutes:write` token permissions, and publish support that signs the mute list, writes it to the private relay, and broadcasts it to public write relays. Entries cover keywords, pubkeys, threads/events, and hashtags.
 - Scoped follow/unfollow for linked apps: `POST /api/v1/following/follow` and `POST /api/v1/following/unfollow` (both keyed by pubkey) add or remove a contact in the local-truth kind:3 and then sign and broadcast it to the private vault and public relays in one call. Authorized with the new `following:write` scope (selectable in the token UI) instead of admin, so apps like Feedstr can manage follows without holding admin or the ability to sign kind:3 directly. `removeFollowing` now also matches by pubkey (not just internal id), and the token scope picker gained a "Follow / unfollow" checkbox.
@@ -73,6 +75,7 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.0...HEAD
+[v1.0.0]: https://github.com/sette7blo/idenstr/compare/v0.1.1...v1.0.0
 [v0.1.1]: https://github.com/sette7blo/idenstr/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/sette7blo/idenstr/releases/tag/v0.1.0
