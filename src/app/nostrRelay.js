@@ -1,7 +1,25 @@
+// Cap how many relay sockets are open at once. The analytics/discovery fetchers
+// fan out across (relays x author-batches); without a pool that can mean hundreds
+// of simultaneous WebSocket connections — enough to exhaust file descriptors or
+// trip relay rate limits. Workers pull jobs until the queue drains.
+const RELAY_CONCURRENCY = 12;
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function fetchCurrentRelayState(pubkey, relays, options = {}) {
   const uniqueRelays = [...new Set(relays.filter(Boolean))];
   const timeoutMs = options.timeoutMs ?? 4500;
-  const perRelay = await Promise.all(uniqueRelays.map((relay) => fetchRelayEvents(relay, pubkey, timeoutMs)));
+  const perRelay = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => fetchRelayEvents(relay, pubkey, timeoutMs));
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   const latest = {
     profile: newest(events.filter((event) => event.kind === 0)),
@@ -19,7 +37,8 @@ export async function fetchAuthorProfiles(pubkeys, relays, options = {}) {
   const batchSize = options.batchSize ?? 80;
   const batches = [];
   for (let index = 0; index < authors.length; index += batchSize) batches.push(authors.slice(index, index + batchSize));
-  const perRelay = (await Promise.all(uniqueRelays.flatMap((relay) => batches.map((batch) => fetchRelayEvents(relay, batch, timeoutMs, [0], options.limit ?? batch.length))))).flat();
+  const jobs = uniqueRelays.flatMap((relay) => batches.map((batch) => ({ relay, batch })));
+  const perRelay = await mapWithConcurrency(jobs, RELAY_CONCURRENCY, ({ relay, batch }) => fetchRelayEvents(relay, batch, timeoutMs, [0], options.limit ?? batch.length));
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   return { relays: perRelay, events };
 }
@@ -29,7 +48,7 @@ export async function fetchFollowRelayLists(pubkeys, relays, options = {}) {
   const authors = [...new Set(pubkeys.filter((pubkey) => /^[0-9a-f]{64}$/i.test(pubkey)))];
   if (!authors.length || !uniqueRelays.length) return { relays: [], events: [] };
   const timeoutMs = options.timeoutMs ?? 6500;
-  const perRelay = await Promise.all(uniqueRelays.map((relay) => fetchRelayEvents(relay, authors, timeoutMs, [10002], options.limit ?? Math.max(100, authors.length * 2))));
+  const perRelay = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => fetchRelayEvents(relay, authors, timeoutMs, [10002], options.limit ?? Math.max(100, authors.length * 2)));
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   return { relays: perRelay, events };
 }
@@ -46,13 +65,13 @@ export async function fetchFollowCurationEvents(pubkeys, relays, options = {}) {
   const activityBatches = batchesOf(authors, activityBatchSize);
   const includeContacts = options.includeContacts ?? true;
 
-  const contactResults = includeContacts ? (await Promise.all(uniqueRelays.flatMap((relay) =>
-    contactBatches.map((batch) => fetchRelayEvents(relay, batch, timeoutMs, [3], Math.max(24, batch.length * 3)))
-  ))).flat() : [];
+  const contactJobs = includeContacts ? uniqueRelays.flatMap((relay) => contactBatches.map((batch) => ({ relay, batch }))) : [];
+  const contactResults = await mapWithConcurrency(contactJobs, RELAY_CONCURRENCY, ({ relay, batch }) =>
+    fetchRelayEvents(relay, batch, timeoutMs, [3], Math.max(24, batch.length * 3)));
   const activityKinds = options.activityKinds ?? [1, 6, 7, 9734];
-  const activityResults = (await Promise.all(uniqueRelays.flatMap((relay) =>
-    activityBatches.map((batch) => fetchRelayEvents(relay, batch, timeoutMs, activityKinds, options.limit ?? Math.max(120, batch.length * 16), { since }))
-  ))).flat();
+  const activityJobs = uniqueRelays.flatMap((relay) => activityBatches.map((batch) => ({ relay, batch })));
+  const activityResults = await mapWithConcurrency(activityJobs, RELAY_CONCURRENCY, ({ relay, batch }) =>
+    fetchRelayEvents(relay, batch, timeoutMs, activityKinds, options.limit ?? Math.max(120, batch.length * 16), { since }));
   const perRelay = [...contactResults, ...activityResults];
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   return { relays: perRelay, events };
@@ -61,7 +80,7 @@ export async function fetchFollowCurationEvents(pubkeys, relays, options = {}) {
 export async function publishEventToRelays(event, relays, options = {}) {
   const uniqueRelays = [...new Set(relays.filter(Boolean))];
   const timeoutMs = options.timeoutMs ?? 4500;
-  const results = await Promise.all(uniqueRelays.map((relay) => publishRelayEvent(relay, event, timeoutMs)));
+  const results = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => publishRelayEvent(relay, event, timeoutMs));
   return { event, results, ok: results.some((result) => result.accepted) };
 }
 

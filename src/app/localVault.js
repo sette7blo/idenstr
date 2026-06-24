@@ -44,6 +44,59 @@ function sendEvent(relayUrl, event, timeoutMs) {
   });
 }
 
+// Write many events over a single connection instead of one socket per event.
+// Used by restore, where a large vault would otherwise mean thousands of serial
+// connect/OK/close round-trips.
+export async function storeEventsLocally(events, options = {}) {
+  const relayUrl = options.relayUrl ?? process.env.IDENSTR_PRIVATE_RELAY_URL ?? '';
+  const list = Array.isArray(events) ? events : [];
+  if (!relayUrl) return { accepted: 0, failed: 0, skipped: true, message: 'private relay not configured' };
+  if (typeof WebSocket !== 'function') return { accepted: 0, failed: list.length, message: 'WebSocket client unavailable in this Node runtime' };
+  const signed = list.filter((event) => event?.id && event?.sig);
+  const unsigned = list.length - signed.length;
+  if (!signed.length) return { accepted: 0, failed: unsigned, message: 'no signed events to write' };
+  return sendEvents(relayUrl, signed, unsigned, options.timeoutMs ?? Math.max(DEFAULT_TIMEOUT_MS, signed.length * 40));
+}
+
+function sendEvents(relayUrl, events, unsigned, timeoutMs) {
+  return new Promise((resolve) => {
+    const pending = new Set(events.map((event) => event.id));
+    let accepted = 0;
+    let rejected = 0;
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { socket.close(); } catch {}
+      resolve({ accepted, failed: rejected + pending.size + unsigned, timedOut: pending.size > 0 });
+    };
+    const timer = setTimeout(settle, timeoutMs);
+    let socket;
+    try {
+      socket = new WebSocket(relayUrl);
+    } catch (error) {
+      clearTimeout(timer);
+      resolve({ accepted: 0, failed: events.length + unsigned, message: error.message });
+      return;
+    }
+    socket.addEventListener('open', () => {
+      for (const event of events) {
+        try { socket.send(JSON.stringify(['EVENT', event])); } catch { /* counted as pending on settle */ }
+      }
+    });
+    socket.addEventListener('message', (message) => {
+      const parsed = parseRelayMessage(message.data);
+      if (!Array.isArray(parsed) || parsed[0] !== 'OK' || !pending.has(parsed[1])) return;
+      pending.delete(parsed[1]);
+      if (parsed[2]) accepted += 1; else rejected += 1;
+      if (pending.size === 0) settle();
+    });
+    socket.addEventListener('error', settle);
+    socket.addEventListener('close', settle);
+  });
+}
+
 function parseRelayMessage(data) {
   try {
     return JSON.parse(String(data));

@@ -1,4 +1,4 @@
-import { createECDH, createHash } from 'node:crypto';
+import { createECDH, createHash, randomBytes } from 'node:crypto';
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const BECH32_GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
@@ -13,11 +13,17 @@ export function signNostrEvent(nsec, event) {
   const secret = secretFromNsec(nsec);
   const privateKey = bytesToNumber(secret);
   if (privateKey <= 0n || privateKey >= N) throw new Error('invalid nsec secret scalar');
-  const publicPoint = pointMultiply(G, privateKey);
-  const pubkey = hex32(publicPoint.x);
+  // Derive the public key with Node's native (constant-time) secp256k1 rather
+  // than a variable-time scalar multiply over the secret key.
+  const ecdh = createECDH('secp256k1');
+  ecdh.setPrivateKey(secret);
+  const compressed = ecdh.getPublicKey(null, 'compressed');
+  const px = compressed.subarray(1, 33);
+  const evenY = compressed[0] === 0x02;
+  const pubkey = px.toString('hex');
   const unsigned = { ...event, pubkey };
   const id = eventHash(unsigned);
-  const sig = schnorrSign(Buffer.from(id, 'hex'), privateKey, publicPoint);
+  const sig = schnorrSign(Buffer.from(id, 'hex'), privateKey, px, evenY);
   return { ...unsigned, id, sig };
 }
 
@@ -38,11 +44,12 @@ export function eventHash(event) {
   return createHash('sha256').update(serialized).digest('hex');
 }
 
-function schnorrSign(message, privateKey, publicPoint) {
-  const d = hasEvenY(publicPoint) ? privateKey : N - privateKey;
-  const px = numberToBytes(publicPoint.x, 32);
+function schnorrSign(message, privateKey, px, evenY) {
+  const d = evenY ? privateKey : N - privateKey;
   const dBytes = numberToBytes(d, 32);
-  const aux = Buffer.alloc(32, 0);
+  // BIP-340 recommends fresh randomness for aux_rand (fault / side-channel
+  // hardening); a deterministic all-zero aux is valid but weaker.
+  const aux = randomBytes(32);
   const t = xor(dBytes, taggedHash('BIP0340/aux', aux));
   let k = bytesToNumber(taggedHash('BIP0340/nonce', Buffer.concat([t, px, message]))) % N;
   if (k === 0n) throw new Error('schnorr nonce was zero');
@@ -117,10 +124,6 @@ function bytesToNumber(bytes) {
 
 function numberToBytes(value, length) {
   return Buffer.from(value.toString(16).padStart(length * 2, '0'), 'hex');
-}
-
-function hex32(value) {
-  return value.toString(16).padStart(64, '0');
 }
 
 function xor(a, b) {

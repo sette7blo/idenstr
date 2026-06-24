@@ -8,6 +8,7 @@ import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInf
 import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, inspectPrivateRelay, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveMutes, savePrivateRelay, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays, verifyNip05 } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
+import { loadState, saveState, addAudit, DEFAULT_TUNING } from './app/state.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const publicDir = join(root, 'public');
@@ -98,10 +99,10 @@ async function route(req, res) {
     return sendJson(res, 200, await publishEvent(payload));
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await (await import('./app/state.js')).loadState(); return sendJson(res, 200, state.tuning); }
+  if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await loadState(); return sendJson(res, 200, state.tuning); }
   if (req.method === 'PUT' && url.pathname === '/api/v1/tuning') {
-    const { loadState: ls, saveState: ss, addAudit: aa, DEFAULT_TUNING: dt } = await import('./app/state.js');
-    const state = await ls();
+    const dt = DEFAULT_TUNING;
+    const state = await loadState();
     const body = await readJson(req);
     state.tuning = {
       discover: { candidates: clampInt(body.discover?.candidates, 5, 100, dt.discover.candidates), results: clampInt(body.discover?.results, 1, 50, dt.discover.results) },
@@ -112,8 +113,8 @@ async function route(req, res) {
       },
       activity: { veryActive: clampInt(body.activity?.veryActive, 1, 30, dt.activity.veryActive), active: clampInt(body.activity?.active, 1, 60, dt.activity.active), quiet: clampInt(body.activity?.quiet, 1, 180, dt.activity.quiet), inactive: clampInt(body.activity?.inactive, 1, 365, dt.activity.inactive) }
     };
-    aa(state, 'tuning.updated', 'Tuning parameters updated');
-    await ss(state);
+    addAudit(state, 'tuning.updated', 'Tuning parameters updated');
+    await saveState(state);
     return sendJson(res, 200, state.tuning);
   }
   if (req.method === 'GET' && url.pathname === '/api/v1/backups') return sendJson(res, 200, { backups: await getBackups() });
@@ -256,7 +257,7 @@ function requiredScope(method, pathname) {
   if (pathname === '/api/v1/stack') return 'relays:read';
   if (pathname.startsWith('/api/v1/api-tokens')) return 'admin';
   if (pathname.startsWith('/api/v1/backups')) return 'admin';
-  if (pathname === '/api/v1/tuning') return method === 'GET' ? 'admin' : 'admin';
+  if (pathname === '/api/v1/tuning') return 'admin';
   if (pathname === '/api/v1/identity' || pathname === '/api/v1/profile') return method === 'GET' ? 'profile:read' : 'admin';
   if (pathname.startsWith('/api/v1/profile/')) return 'admin';
   if (pathname === '/api/v1/relays') return method === 'GET' ? 'relays:read' : 'admin';
@@ -336,9 +337,18 @@ function cacheControl(filePath) {
   return 'public, max-age=3600';
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 16 * 1024 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      const err = new Error('Request body too large');
+      err.code = 'body_too_large';
+      throw err;
+    }
+    chunks.push(chunk);
+  }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }

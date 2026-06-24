@@ -26,7 +26,7 @@ export async function addFollowing(entry) {
   state.following.event = buildCanonicalEvent(3, state.following.entries);
   state.following.truth = null;
   addAudit(state, 'following.added', `Added ${item.petname || item.pubkey}`);
-  await saveState(state);
+  await saveState(state, { directory: true });
   return item;
 }
 
@@ -44,7 +44,7 @@ export async function removeFollowing(idOrPubkey) {
   state.following.event = buildCanonicalEvent(3, state.following.entries);
   state.following.truth = null;
   addAudit(state, 'following.removed', before === state.following.entries.length ? 'No matching follow entry' : 'Follow entry removed');
-  await saveState(state);
+  await saveState(state, { directory: true });
   return before !== state.following.entries.length;
 }
 
@@ -146,7 +146,7 @@ export async function refreshFollowingProfiles() {
   state.following.directoryUpdatedAt = new Date().toISOString();
   const summary = followDirectorySummary(state.following);
   addAudit(state, 'following.profiles_refreshed', `Refreshed follow profile cache: ${summary.cached}/${summary.total} cached, ${summary.missing} missing`);
-  await saveState(state);
+  await saveState(state, { directory: true });
   return { following: { totalCount: entries.length, directorySummary: summary, entries: enrichedFollowingEntries(state.following) } };
 }
 
@@ -174,7 +174,7 @@ export async function* refreshFollowingProfilesStreaming() {
   state.following.directoryUpdatedAt = new Date().toISOString();
   const summary = followDirectorySummary(state.following);
   addAudit(state, 'following.profiles_refreshed', `Refreshed follow profile cache: ${summary.cached}/${summary.total} cached, ${summary.missing} missing`);
-  await saveState(state);
+  await saveState(state, { directory: true });
   yield { type: 'done', following: { totalCount: entries.length, directorySummary: summary, entries: enrichedFollowingEntries(state.following) } };
 }
 

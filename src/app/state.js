@@ -1,11 +1,8 @@
 import { createECDH, createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getStateValue, maybeMigrateJsonState, setStateValue } from './db.js';
 import { privateRelayUrl } from './system.js';
 
-const root = fileURLToPath(new URL('../..', import.meta.url));
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
 
@@ -14,18 +11,31 @@ export { randomUUID };
 export async function loadState() {
   const migrated = maybeMigrateJsonState((statePath) => JSON.parse(readFileSync(statePath, 'utf8')));
   const saved = migrated ?? getStateValue('app');
-  if (saved) return mergeDefaults(saved);
-  const state = defaultState();
-  await saveState(state);
+  if (!saved) {
+    const state = defaultState();
+    await saveState(state, { directory: true });
+    return state;
+  }
+  const state = mergeDefaults(saved);
+  // The follow directory (a profile cache that can grow large) is kept in its own
+  // row so ordinary state writes don't re-serialize it; migrate it out of the app
+  // blob the first time it's seen.
+  const directory = getStateValue('directory');
+  if (directory) {
+    state.following.directory = directory;
+  } else {
+    state.following.directory = state.following.directory ?? {};
+    setStateValue('directory', state.following.directory);
+  }
   return state;
 }
 
-export async function saveState(state) {
-  setStateValue('app', state);
-}
-
-function getStatePath() {
-  return process.env.IDENSTR_STATE_STORE ?? join(root, 'data', 'idenstr-state.json');
+// Persist the app state. The follow directory is only written when the caller
+// signals it changed (options.directory), keeping it out of the hot path.
+export async function saveState(state, options = {}) {
+  const { directory, ...followingRest } = state.following ?? {};
+  setStateValue('app', { ...state, following: followingRest });
+  if (options.directory) setStateValue('directory', directory ?? {});
 }
 
 export const DEFAULT_TUNING = {
@@ -48,7 +58,6 @@ function defaultState() {
     mutes: { entries: [], updatedAt: now, event: buildCanonicalEvent(10000, []) },
     relays: { read, write, private: privateRelayUrl() || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
     tuning: { ...DEFAULT_TUNING },
-    backups: [],
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
   };
 }

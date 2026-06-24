@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { getDb } from './db.js';
+import { prep } from './db.js';
 
 export class TokenStore {
   constructor(_filePath) {}
@@ -20,7 +20,7 @@ export class TokenStore {
       rateLimit: 60,
       type: 'api'
     };
-    getDb().prepare(`
+    prep(`
       INSERT INTO tokens (id, name, token_hash, scopes, created_at, last_used_at, revoked_at, rate_limit, type)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(record.id, record.name, record.tokenHash, JSON.stringify(record.scopes), record.createdAt, record.lastUsedAt, record.revokedAt, record.rateLimit, record.type);
@@ -28,12 +28,12 @@ export class TokenStore {
   }
 
   async listTokens() {
-    return getDb().prepare('SELECT id, name, scopes, created_at, last_used_at, revoked_at, rate_limit, type FROM tokens ORDER BY created_at DESC').all()
+    return prep('SELECT id, name, scopes, created_at, last_used_at, revoked_at, rate_limit, type FROM tokens ORDER BY created_at DESC').all()
       .map(rowToSafeToken);
   }
 
   async revokeToken(id) {
-    const result = getDb().prepare('UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(new Date().toISOString(), id);
+    const result = prep('UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(new Date().toISOString(), id);
     return result.changes > 0;
   }
 
@@ -49,25 +49,23 @@ export class TokenStore {
     if (process.env.IDENSTR_ADMIN_TOKEN && safeEqual(hashToken(process.env.IDENSTR_ADMIN_TOKEN), hashToken(token))) {
       return { id: 'env_admin', name: 'env-admin', scopes: ['admin'], rateLimit: 600, type: 'env' };
     }
-    const candidateHash = hashToken(token);
-    const rows = getDb().prepare('SELECT * FROM tokens WHERE revoked_at IS NULL').all();
-    for (const record of rows) {
-      if (!safeEqual(record.token_hash, candidateHash)) continue;
-      const now = new Date();
-      const last = record.last_used_at ? new Date(record.last_used_at) : null;
-      if (!last || now.getTime() - last.getTime() > 60_000) {
-        getDb().prepare('UPDATE tokens SET last_used_at = ? WHERE id = ?').run(now.toISOString(), record.id);
-        record.last_used_at = now.toISOString();
-      }
-      return {
-        id: record.id,
-        name: record.name,
-        scopes: parseScopes(record.scopes),
-        rateLimit: record.rate_limit ?? 60,
-        type: record.type ?? 'api'
-      };
+    // token_hash is unique and indexed: look it up directly instead of scanning
+    // every row. Matching by stored SHA-256 leaks nothing — a forgery needs a
+    // preimage of the hash, not a timing-safe compare against it.
+    const record = prep('SELECT * FROM tokens WHERE token_hash = ? AND revoked_at IS NULL').get(hashToken(token));
+    if (!record) return null;
+    const now = new Date();
+    const last = record.last_used_at ? new Date(record.last_used_at) : null;
+    if (!last || now.getTime() - last.getTime() > 60_000) {
+      prep('UPDATE tokens SET last_used_at = ? WHERE id = ?').run(now.toISOString(), record.id);
     }
-    return null;
+    return {
+      id: record.id,
+      name: record.name,
+      scopes: parseScopes(record.scopes),
+      rateLimit: record.rate_limit ?? 60,
+      type: record.type ?? 'api'
+    };
   }
 }
 

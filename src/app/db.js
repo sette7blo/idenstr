@@ -6,6 +6,21 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 let db = null;
 let dbPath = null;
+const stmtCache = new Map();
+
+// Compile each SQL once and reuse the prepared statement (cleared whenever the
+// database handle is (re)opened so statements never outlive their db).
+export function prep(sql) {
+  // Always resolve the db first: getDb() detects a path change and clears the
+  // statement cache, so a cached statement can never outlive its database.
+  const database = getDb();
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = database.prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt;
+}
 
 export function getDbPath() {
   if (process.env.IDENSTR_DB_STORE) return process.env.IDENSTR_DB_STORE;
@@ -17,6 +32,7 @@ export function getDb() {
   const nextPath = getDbPath();
   if (db && dbPath === nextPath) return db;
   if (db) db.close();
+  stmtCache.clear();
   mkdirSync(dirname(nextPath), { recursive: true });
   db = new DatabaseSync(nextPath);
   dbPath = nextPath;
@@ -39,13 +55,6 @@ export function getDb() {
       type TEXT NOT NULL DEFAULT 'api'
     );
     CREATE INDEX IF NOT EXISTS idx_tokens_hash ON tokens(token_hash);
-    CREATE TABLE IF NOT EXISTS audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      at TEXT NOT NULL,
-      type TEXT NOT NULL,
-      message TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at);
     CREATE TABLE IF NOT EXISTS signing_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       at TEXT NOT NULL,
@@ -57,13 +66,6 @@ export function getDb() {
       detail TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_signing_log_at ON signing_log(at);
-    CREATE TABLE IF NOT EXISTS event_snapshots (
-      event_id TEXT PRIMARY KEY,
-      kind INTEGER NOT NULL,
-      created_at INTEGER,
-      event_json TEXT NOT NULL,
-      replaced_at TEXT NOT NULL
-    );
   `);
   return db;
 }
@@ -83,12 +85,12 @@ export function maybeMigrateJsonState(readJsonFile) {
 }
 
 export function getStateValue(key) {
-  const row = getDb().prepare('SELECT value FROM state WHERE key = ?').get(key);
+  const row = prep('SELECT value FROM state WHERE key = ?').get(key);
   return row ? JSON.parse(row.value) : null;
 }
 
 export function setStateValue(key, value) {
-  getDb().prepare(`
+  prep(`
     INSERT INTO state (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(key, JSON.stringify(value), new Date().toISOString());
@@ -98,4 +100,5 @@ export function closeDbForTests() {
   if (db) db.close();
   db = null;
   dbPath = null;
+  stmtCache.clear();
 }

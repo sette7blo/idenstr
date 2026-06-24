@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getDb } from './db.js';
-import { fetchAllEvents, storeEventLocally } from './localVault.js';
+import { fetchAllEvents, storeEventsLocally } from './localVault.js';
 import { addAudit, loadState, randomUUID, saveState } from './state.js';
 
 const BACKUP_DIR = process.env.IDENSTR_BACKUP_DIR || join(process.env.IDENSTR_STATE_STORE ? join(process.env.IDENSTR_STATE_STORE, '..') : 'data', 'backups');
@@ -116,18 +116,9 @@ export async function restoreBackup(data) {
     changes.push(`tokens (${imported})`);
   }
   if (Array.isArray(data.vault?.events) && data.vault.events.length) {
-    let accepted = 0;
-    let failed = 0;
-    for (const event of data.vault.events) {
-      if (!event?.id || !event?.sig) {
-        failed += 1;
-        continue;
-      }
-      const result = await storeEventLocally(event);
-      if (result.accepted) accepted += 1;
-      else failed += 1;
-    }
-    changes.push(`vault events (${accepted} restored${failed ? `, ${failed} failed` : ''})`);
+    // One connection, all events — not a fresh socket per event.
+    const result = await storeEventsLocally(data.vault.events);
+    changes.push(`vault events (${result.accepted} restored${result.failed ? `, ${result.failed} failed` : ''})`);
   }
   // signingLog is archival: kept in the backup file for the record, never
   // merged into a live log on restore.

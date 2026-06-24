@@ -10,6 +10,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 ---
 
 ## [Unreleased]
+### Changed
+- Performance and hardening pass. Relay fan-out for follow analytics and discovery now runs through a bounded connection pool instead of opening one WebSocket per relay×author-batch (which could mean hundreds of simultaneous connections). Backup restore writes every vault event over a single connection rather than a fresh socket per event. The follow-directory profile cache moved to its own database row, so routine state writes no longer re-serialize it. Prepared SQL statements are reused, token authentication uses the indexed hash lookup, and request bodies are size-capped.
+### Security
+- Event signing now derives the public key with Node's native (constant-time) secp256k1 and uses BIP-340 random `aux_rand` instead of a variable-time scalar multiply over the secret key with a zero aux. Added an independent BIP-340 signature-verification test.
 
 ## [v1.0.0] — 2026-06-24
 ### Added
