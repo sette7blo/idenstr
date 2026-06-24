@@ -14,7 +14,7 @@ Idenstr owns:
 - one `kind:0` profile
 - one `kind:3` following/contact list
 - one `kind:10002` relay list
-- one private relay/local vault connection
+- one private relay connection
 - backup/restore for identity state
 - relay comparison and repair for identity events
 
@@ -34,20 +34,17 @@ POST /api/v1/api-tokens
 DELETE /api/v1/api-tokens/{id}
 ```
 
-Initial token scopes should include:
+Implemented token scopes (`requiredScope()` in `src/server.js`):
 
 ```text
-read:identity
-write:identity
-read:profile
-write:profile
-read:following
-write:following
-read:relays
-write:relays
-read:vault
-admin:app
+admin                  everything: dashboard, token CRUD, backups, tuning, mutations
+sign:kind:<N>          POST /api/v1/sign for event kind N (one scope per kind)
+profile:read           GET /api/v1/profile, GET /api/v1/identity
+relays:read            GET /api/v1/relays
+following:read         GET /api/v1/following, GET /api/v1/following/directory
 ```
+
+Planned with their endpoints: `nip44:encrypt`, `nip44:decrypt`, `mutes:read`, `mutes:write`, `vault:write`. Tokens created without explicit scopes get none.
 
 Never expose plaintext `nsec` through app-linking APIs.
 
@@ -69,7 +66,7 @@ Domain services
    |
 Adapters
    |-- Nostr relay client
-   |-- Private relay/local vault adapter
+   |-- Private relay adapter
    |-- App metadata DB adapter
    |-- Backup/export adapter
    |-- Secret/key custody adapter
@@ -124,7 +121,7 @@ Handles:
 
 - store canonical signed Nostr events
 - store historical event versions
-- expose local vault/private relay status
+- expose private relay status
 - support backup/export
 
 ### Backup service
@@ -216,7 +213,7 @@ Destructive operations should have preview/confirm flows.
 1. Infra skeleton.
 2. Nostr domain/event library tests.
 3. Key import/generation tests.
-4. Local vault/private relay integration.
+4. Local private relay integration.
 5. App metadata DB schema.
 6. Relay fetch/compare for `kind:0`.
 7. Profile editor/publish.

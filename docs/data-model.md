@@ -21,7 +21,7 @@ Canonical source for public profile fields:
 - NIP-05
 - Lightning address / `lud16` where used
 
-Store the complete signed event in the private relay/local vault.
+Store the complete signed event in the private relay.
 
 ### `kind:3` following/contact list
 
@@ -40,7 +40,7 @@ Canonical source for relay list preferences:
 - relay URL
 - read/write marker
 
-Private/local relay classification can exist in app metadata when it should not be public.
+Private relay classification can exist in app metadata when it should not be public.
 
 ## App Metadata Tables
 
@@ -157,7 +157,7 @@ until the v0.1 single-identity workflows are stable.
 For each canonical event, compare selected relays:
 
 ```text
-canonical event in local vault
+canonical event in private relay
   -> fetch latest matching replaceable event from relay
   -> compare event id / created_at / content
   -> classify relay status
