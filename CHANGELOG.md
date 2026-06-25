@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.0.2] — 2026-06-25
+### Fixed
+- The API-token screen now has checkboxes for `sign:kind:27235` (NIP-98 upload auth, used by Feedstr and Workstr image uploads) and `publish:kind:33401` (NIP-101e exercise templates, used by Workstr). These first-party app scopes previously had to be typed into the free-text "extra scopes" field, so a least-privilege token created by clicking through the form was silently missing them and the app's scope check failed.
+
 ## [v1.0.1] — 2026-06-24
 ### Changed
 - Performance and hardening pass. Relay fan-out for follow analytics and discovery now runs through a bounded connection pool instead of opening one WebSocket per relay×author-batch (which could mean hundreds of simultaneous connections). Backup restore writes every vault event over a single connection rather than a fresh socket per event. The follow-directory profile cache moved to its own database row, so routine state writes no longer re-serialize it. Prepared SQL statements are reused, token authentication uses the indexed hash lookup, and request bodies are size-capped.
@@ -81,7 +85,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.2...HEAD
+[v1.0.2]: https://github.com/sette7blo/idenstr/compare/v1.0.1...v1.0.2
 [v1.0.1]: https://github.com/sette7blo/idenstr/compare/v1.0.0...v1.0.1
 [v1.0.0]: https://github.com/sette7blo/idenstr/compare/v0.1.1...v1.0.0
 [v0.1.1]: https://github.com/sette7blo/idenstr/compare/v0.1.0...v0.1.1
