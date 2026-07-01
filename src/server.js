@@ -1,11 +1,10 @@
 import http from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInfo } from './app/system.js';
-import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, inspectPrivateRelay, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveMutes, savePrivateRelay, saveFollowing, saveProfile, saveRelays, scanFollowing, scanProfile, scanRelays, verifyNip05 } from './app/identity.js';
+import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
 import { loadState, saveState, addAudit, DEFAULT_TUNING } from './app/state.js';
@@ -32,7 +31,6 @@ async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
   const auth = await authorizeRequest(req, url);
   if (!auth.ok) {
-    if (auth.challenge) res.setHeader('WWW-Authenticate', 'Basic realm="Idenstr", charset="UTF-8"');
     return sendJson(res, auth.status, auth.body);
   }
   req.principal = auth.principal;
@@ -99,6 +97,13 @@ async function route(req, res) {
     return sendJson(res, 200, await publishEvent(payload));
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/wallet') return sendJson(res, 200, getWallet());
+  if (req.method === 'PUT' && url.pathname === '/api/v1/wallet') return sendJson(res, 200, await saveWallet(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/wallet/info') return sendJson(res, 200, await walletInfo());
+  if (req.method === 'POST' && url.pathname === '/api/v1/wallet/balance') return sendJson(res, 200, await walletBalance());
+  if (req.method === 'POST' && url.pathname === '/api/v1/wallet/pay') return sendJson(res, 200, await payInvoice(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/zaps/pay') return sendJson(res, 200, await payZap(await readJson(req)));
+
   if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await loadState(); return sendJson(res, 200, state.tuning); }
   if (req.method === 'PUT' && url.pathname === '/api/v1/tuning') {
     const dt = DEFAULT_TUNING;
@@ -153,19 +158,12 @@ async function authorizeRequest(req, url) {
     return { ok: true, principal: { id: 'anonymous', name: 'anonymous', scopes: [] } };
   }
 
-  // Branding assets the browser and iOS fetch without credentials: the favicon,
-  // the PWA manifest, and the home-screen / apple-touch icons. These are
-  // non-sensitive, and they must load even on the login screen — otherwise iOS
-  // falls back to a generated letter tile instead of the app icon. serveStatic
-  // rejects any path containing '..', so the /icons/ prefix cannot be escaped.
-  if ((req.method === 'GET' || req.method === 'HEAD') && isPublicAsset(url.pathname)) {
-    return { ok: true, principal: { id: 'anonymous', name: 'anonymous', scopes: [] } };
-  }
-
   const header = req.headers.authorization ?? '';
 
   // App-to-app callers (Feedstr and other *str apps) present a scoped bearer
-  // token. Scope checks apply to the versioned API surface.
+  // token. Scope checks apply to the versioned API surface. If a bearer token is
+  // supplied it must be valid; dashboard openness does not turn bad app tokens
+  // into anonymous admin access.
   const token = bearerToken(header);
   if (token) {
     const principal = await tokenStore.authenticate(token);
@@ -179,70 +177,19 @@ async function authorizeRequest(req, url) {
     return { ok: true, principal };
   }
 
-  // The human dashboard authenticates with HTTP Basic credentials from
-  // IDENSTR_AUTH_USER / IDENSTR_AUTH_PASSWORD. The browser supplies and caches
-  // them, so the frontend stores nothing and sends no Authorization header of
-  // its own. Auth is independent of how the port is bound.
-  if (authConfigured()) {
-    const basic = basicCredentials(header);
-    if (basic && checkBasicAuth(basic)) {
-      return { ok: true, principal: { id: 'dashboard', name: basic.user, scopes: ['admin'], type: 'dashboard' } };
-    }
-    return { ok: false, status: 401, body: { error: 'unauthorized' }, challenge: true };
-  }
-
-  // No dashboard credentials configured. This is only reachable on a
-  // loopback-bound dev box: the startup guard refuses to boot a non-loopback
-  // deployment without credentials, so LAN/mesh installs never land here.
+  // The human dashboard is intentionally open on the user's safe server/mesh.
+  // Same-origin dashboard requests carry no Authorization header and run as the
+  // dashboard admin principal. Linked apps should still use scoped bearer tokens
+  // so signatures/actions are attributable and scope-limited.
   if (url.pathname === '/api/v1/sign') {
     return { ok: false, status: 401, body: { error: 'unauthorized', detail: 'signing requires a bearer token with a sign:kind scope' } };
   }
   return { ok: true, principal: { id: 'dashboard', name: 'dashboard', scopes: ['admin'], type: 'dashboard' } };
 }
 
-function isPublicAsset(pathname) {
-  return pathname === '/manifest.webmanifest' ||
-    pathname === '/favicon.ico' ||
-    pathname.startsWith('/icons/');
-}
-
 function bearerToken(header) {
   const match = String(header).match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : '';
-}
-
-function basicCredentials(header) {
-  const match = String(header).match(/^Basic\s+(.+)$/i);
-  if (!match) return null;
-  let decoded = '';
-  try {
-    decoded = Buffer.from(match[1].trim(), 'base64').toString('utf8');
-  } catch {
-    return null;
-  }
-  const separator = decoded.indexOf(':');
-  if (separator === -1) return null;
-  return { user: decoded.slice(0, separator), pass: decoded.slice(separator + 1) };
-}
-
-export function authConfigured() {
-  return Boolean((process.env.IDENSTR_AUTH_USER ?? '') && (process.env.IDENSTR_AUTH_PASSWORD ?? ''));
-}
-
-function checkBasicAuth({ user, pass }) {
-  return constantTimeEqual(user, process.env.IDENSTR_AUTH_USER ?? '') &&
-    constantTimeEqual(pass, process.env.IDENSTR_AUTH_PASSWORD ?? '');
-}
-
-function constantTimeEqual(left, right) {
-  const a = createHash('sha256').update(String(left)).digest();
-  const b = createHash('sha256').update(String(right)).digest();
-  return timingSafeEqual(a, b);
-}
-
-export function isLoopbackBind(bind) {
-  const value = String(bind ?? '').trim().toLowerCase();
-  return value === '' || value === 'localhost' || value === '::1' || value.startsWith('127.');
 }
 
 function publicPrincipal(principal) {
@@ -274,6 +221,10 @@ function requiredScope(method, pathname) {
   // Publishing is authorized per-kind inside the route (denyPublish), mirroring
   // how /sign authorizes per sign:kind scope, so scoped apps can publish without admin.
   if (pathname === '/api/v1/events/publish') return null;
+  // The NWC wallet is a spending surface: connecting it and moving arbitrary
+  // invoices stays admin-only. Scoped apps get only the narrow NIP-57 zap endpoint.
+  if (pathname === '/api/v1/zaps/pay') return 'zaps:write';
+  if (pathname.startsWith('/api/v1/wallet')) return 'admin';
   return 'admin';
 }
 
@@ -388,18 +339,8 @@ async function streamGenerator(res, generator) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const externalBind = process.env.IDENSTR_HOST_BIND ?? process.env.IDENSTR_BIND_HOST ?? host;
-  if (!authConfigured() && !isLoopbackBind(externalBind)) {
-    console.error(`Idenstr refuses to start: it is bound to ${externalBind} (reachable beyond localhost) but no dashboard credentials are set.`);
-    console.error('Set IDENSTR_AUTH_USER and IDENSTR_AUTH_PASSWORD in .env, or bind to 127.0.0.1 for local-only development.');
-    process.exit(1);
-  }
   createServer().listen(port, host, () => {
     console.log(`Idenstr listening on http://${host}:${port}`);
-    if (authConfigured()) {
-      console.log('Dashboard requires HTTP Basic credentials (IDENSTR_AUTH_USER/IDENSTR_AUTH_PASSWORD). Apps authenticate with scoped bearer tokens.');
-    } else {
-      console.log('Dashboard is open (no IDENSTR_AUTH_USER/IDENSTR_AUTH_PASSWORD set) and bound to localhost. Set credentials before exposing it on a LAN or mesh.');
-    }
+    console.log('Dashboard is open on this trusted server/mesh. Apps authenticate with scoped bearer tokens.');
   });
 }

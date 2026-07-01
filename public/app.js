@@ -38,6 +38,12 @@ const els = {
   privateRelayStatus: document.querySelector('#private-relay-status'),
   privateRelayEvents: document.querySelector('#private-relay-events'),
   privateRelayIndicator: document.querySelector('#private-relay-indicator'),
+  walletIndicator: document.querySelector('#wallet-indicator'),
+  walletForm: document.querySelector('#wallet-form'),
+  walletStatus: document.querySelector('#wallet-status'),
+  walletInfo: document.querySelector('#wallet-info'),
+  walletPayForm: document.querySelector('#wallet-pay-form'),
+  walletPayStatus: document.querySelector('#wallet-pay-status'),
   backupList: document.querySelector('#backup-list'),
   auditLog: document.querySelector('#audit-log'),
   auditCount: document.querySelector('#audit-count'),
@@ -60,7 +66,7 @@ let followingVisibleLimit = 50;
 const followingPageSize = 50;
 const followingSelectedIds = new Set();
 let followingBulkConfirm = false;
-const validViews = new Set(['overview', 'profile', 'following', 'mutes', 'relays', 'private-relay', 'backups', 'tokens', 'audit', 'tuning']);
+const validViews = new Set(['overview', 'profile', 'following', 'mutes', 'relays', 'private-relay', 'wallet', 'backups', 'tokens', 'audit', 'tuning']);
 
 function authHeaders(extra = {}) {
   const headers = {
@@ -80,7 +86,9 @@ async function api(path, options = {}) {
     let detail = `${response.status} ${response.statusText}`;
     try {
       const body = await response.json();
-      detail = body.required ? `${body.error}: ${body.required}` : (body.error || detail);
+      detail = body.required
+        ? `${body.error}: ${body.required}`
+        : (body.error === 'internal_error' && body.message ? body.message : (body.error || detail));
     } catch {}
     throw new Error(detail);
   }
@@ -97,6 +105,7 @@ function setView(viewName) {
   els.views.forEach((view) => view.classList.toggle('active-view', view.dataset.view === next));
   els.tabs.forEach((tab) => tab.classList.toggle('active-tab', tab.dataset.tab === next));
   if (next === 'private-relay') loadPrivateRelay();
+  if (next === 'wallet') loadWallet();
 }
 
 function render(data) {
@@ -123,6 +132,7 @@ function render(data) {
   els.relayForm.elements.write.value = relays.write.join('\n');
   if (els.privateRelayForm) els.privateRelayForm.elements.url.value = relays.private || '';
   if (els.privateRelayIndicator) els.privateRelayIndicator.textContent = relays.private ? '1' : '0';
+  if (els.walletIndicator) els.walletIndicator.textContent = data.wallet?.configured ? 'connected' : 'none';
   renderStateStrip('profile', eventPresence(profile.event));
   renderStateStrip('following', eventPresence(following.event));
   renderStateStrip('mutes', eventPresence(mutes?.event));
@@ -173,7 +183,8 @@ function vaultKindMeta(kind) {
     6: { name: 'Reposts', tag: 'kind:6' },
     7: { name: 'Reactions', tag: 'kind:7' },
     10002: { name: 'Relay list', tag: 'kind:10002' },
-    30078: { name: 'App data', tag: 'kind:30078' }
+    33401: { name: 'Exercise template', tag: 'kind:33401' },
+    33402: { name: 'Workout template', tag: 'kind:33402' }
   })[kind] || { name: `Kind ${kind}`, tag: `kind:${kind}` };
 }
 
@@ -1334,6 +1345,103 @@ async function loadPrivateRelay() {
 
 document.querySelector('#inspect-private-relay')?.addEventListener('click', async (event) => {
   await withButtonState(event.currentTarget, loadPrivateRelay);
+});
+
+function formatSats(msat) {
+  if (!Number.isFinite(msat)) return '—';
+  return `${Math.floor(msat / 1000).toLocaleString()} sats`;
+}
+
+function renderWallet(w) {
+  if (!w || !els.walletStatus) return;
+  if (els.walletIndicator) els.walletIndicator.textContent = w.configured ? 'connected' : 'none';
+  if (!w.configured) {
+    els.walletStatus.textContent = 'No wallet connected yet. Paste a connection string above and save.';
+    els.walletInfo.className = 'relay-list empty';
+    els.walletInfo.textContent = 'Connect a wallet, then refresh to read its info and balance.';
+    return;
+  }
+  els.walletStatus.textContent = `Wallet connected via ${w.relay}. The connection secret is stored in .env and never shown here.`;
+  const rows = [];
+  if (w.alias) rows.push(['Alias', w.alias]);
+  rows.push(['Wallet pubkey', `${w.walletPubkey.slice(0, 12)}…`]);
+  if (w.lud16) rows.push(['Lightning address', w.lud16]);
+  if (Number.isFinite(w.balanceMsat)) rows.push(['Balance', `${formatSats(w.balanceMsat)}${w.balanceAt ? ` · ${new Date(w.balanceAt).toLocaleString()}` : ''}`]);
+  if (Array.isArray(w.methods) && w.methods.length) rows.push(['Supported methods', w.methods.join(', ')]);
+  if (w.info?.network) rows.push(['Network', w.info.network]);
+  els.walletInfo.className = 'relay-list';
+  els.walletInfo.innerHTML = rows.map(([k, v]) => `<div class="row"><div><strong>${escapeHtml(k)}</strong></div><div>${escapeHtml(String(v))}</div></div>`).join('');
+}
+
+async function loadWallet() {
+  try {
+    renderWallet(await api('wallet'));
+  } catch (error) {
+    els.walletStatus.textContent = `Could not read wallet status: ${error.message}`;
+  }
+}
+
+els.walletForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await withButtonState(els.walletForm.querySelector('button[type="submit"]'), async () => {
+    const uri = els.walletForm.elements.uri.value.trim();
+    if (!uri) { els.walletStatus.textContent = 'Paste a connection string first.'; return; }
+    try {
+      const saved = await api('wallet', { method: 'PUT', body: JSON.stringify({ uri }) });
+      els.walletForm.reset();
+      renderWallet(saved);
+      els.walletStatus.textContent = `Wallet connection saved to .env and active now. Use Refresh info / Refresh balance to read from it.`;
+      await refresh();
+    } catch (error) {
+      els.walletStatus.textContent = `Could not save connection: ${error.message}`;
+    }
+  });
+});
+
+document.querySelector('#disconnect-wallet')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    const cleared = await api('wallet', { method: 'PUT', body: JSON.stringify({ uri: '' }) });
+    renderWallet(cleared);
+    els.walletStatus.textContent = 'Wallet disconnected. The connection was removed from .env.';
+    await refresh();
+  });
+});
+
+document.querySelector('#wallet-refresh-info')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    try {
+      renderWallet(await api('wallet/info', { method: 'POST' }));
+    } catch (error) {
+      els.walletStatus.textContent = `Could not read wallet info: ${error.message}`;
+    }
+  });
+});
+
+document.querySelector('#wallet-refresh-balance')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    try {
+      renderWallet(await api('wallet/balance', { method: 'POST' }));
+    } catch (error) {
+      els.walletStatus.textContent = `Could not read wallet balance: ${error.message}`;
+    }
+  });
+});
+
+els.walletPayForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await withButtonState(els.walletPayForm.querySelector('button[type="submit"]'), async () => {
+    const invoice = els.walletPayForm.elements.invoice.value.trim();
+    if (!invoice) { els.walletPayStatus.textContent = 'Paste a bolt11 invoice first.'; return; }
+    els.walletPayStatus.textContent = 'Paying invoice through the connected wallet...';
+    try {
+      const result = await api('wallet/pay', { method: 'POST', body: JSON.stringify({ invoice }) });
+      els.walletPayForm.reset();
+      els.walletPayStatus.textContent = `Payment sent.${result.feesPaid != null ? ` Fee ${result.feesPaid} msat.` : ''}${result.preimage ? ` Preimage ${result.preimage.slice(0, 16)}…` : ''}`;
+      loadWallet();
+    } catch (error) {
+      els.walletPayStatus.textContent = `Payment failed: ${error.message}`;
+    }
+  });
 });
 
 els.relayAddForm.addEventListener('submit', async (event) => {

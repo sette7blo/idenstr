@@ -56,6 +56,7 @@ export function getCapabilities() {
       'relays.scan',
       'relays.import',
       'vault.read',
+      'zaps.write',
       'backups.create',
       'dashboard.interactive'
     ]

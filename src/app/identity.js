@@ -7,6 +7,7 @@ import { getBackups } from './backup.js';
 import { signNostrEvent } from './nostrSigner.js';
 import { publishEventToRelays } from './nostrRelay.js';
 import { storeEventLocally } from './localVault.js';
+import { getWallet } from './wallet.js';
 
 // Re-export all domain functions for server.js
 export { getProfile, saveProfile, scanProfile, publishProfile, profileTruth, verifyNip05 } from './profile.js';
@@ -14,6 +15,7 @@ export { getFollowing, addFollowing, removeFollowing, followAndPublish, unfollow
 export { getMutes, addMute, removeMute, saveMutes, publishMutes, muteAndPublish, unmuteAndPublish, muteListTags } from './mutes.js';
 export { getRelays, saveRelays, publishRelays, scanRelays, computeFollowingRelayPopularity, getPrivateRelay, savePrivateRelay, inspectPrivateRelay } from './relays.js';
 export { getBackups, createBackup, getBackupFile, restoreBackup } from './backup.js';
+export { getWallet, saveWallet, clearWallet, walletInfo, walletBalance, payInvoice, payZap } from './wallet.js';
 export { loadState } from './state.js';
 
 export function getIdentity() {
@@ -92,6 +94,7 @@ export async function getDashboard() {
       tags: muteListTags(muteEntries)
     },
     relays: state.relays,
+    wallet: getWallet(),
     tuning: state.tuning,
     backups: await getBackups(),
     audit: state.audit.slice(0, 20)

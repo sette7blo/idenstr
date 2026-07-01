@@ -1,4 +1,4 @@
-import { createECDH, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createECDH, createHash, randomBytes } from 'node:crypto';
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const BECH32_GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
@@ -10,9 +10,21 @@ const G = {
 };
 
 export function signNostrEvent(nsec, event) {
-  const secret = secretFromNsec(nsec);
+  return signEventWithSecretBytes(secretFromNsec(nsec), event);
+}
+
+// Sign with a raw 32-byte hex secret rather than an nsec. NWC (NIP-47) issues a
+// separate connection secret that is not the user's identity key, so requests to
+// the wallet service are signed with that secret, never IDENSTR_NSEC.
+export function signEventWithSecret(secretHex, event) {
+  const secret = Buffer.from(String(secretHex), 'hex');
+  if (secret.length !== 32) throw new Error('signing secret must be 32 bytes of hex');
+  return signEventWithSecretBytes(secret, event);
+}
+
+function signEventWithSecretBytes(secret, event) {
   const privateKey = bytesToNumber(secret);
-  if (privateKey <= 0n || privateKey >= N) throw new Error('invalid nsec secret scalar');
+  if (privateKey <= 0n || privateKey >= N) throw new Error('invalid secret scalar');
   // Derive the public key with Node's native (constant-time) secp256k1 rather
   // than a variable-time scalar multiply over the secret key.
   const ecdh = createECDH('secp256k1');
@@ -25,6 +37,36 @@ export function signNostrEvent(nsec, event) {
   const id = eventHash(unsigned);
   const sig = schnorrSign(Buffer.from(id, 'hex'), privateKey, px, evenY);
   return { ...unsigned, id, sig };
+}
+
+// NIP-04 encrypted payloads (used by NWC). The shared key is the X coordinate of
+// the ECDH point between our secret and the peer's x-only pubkey (prefixed 0x02
+// to form a compressed point), AES-256-CBC with a random IV.
+function nip04SharedKey(secretHex, peerPubkeyHex) {
+  const secret = Buffer.from(String(secretHex), 'hex');
+  if (secret.length !== 32) throw new Error('nip04 secret must be 32 bytes of hex');
+  if (!/^[0-9a-f]{64}$/i.test(peerPubkeyHex)) throw new Error('nip04 peer pubkey must be 32 bytes of hex');
+  const ecdh = createECDH('secp256k1');
+  ecdh.setPrivateKey(secret);
+  const peer = Buffer.concat([Buffer.from([0x02]), Buffer.from(peerPubkeyHex, 'hex')]);
+  return ecdh.computeSecret(peer);
+}
+
+export function nip04Encrypt(secretHex, peerPubkeyHex, plaintext) {
+  const key = nip04SharedKey(secretHex, peerPubkeyHex);
+  const iv = randomBytes(16);
+  const cipher = createCipheriv('aes-256-cbc', key, iv);
+  const encrypted = Buffer.concat([cipher.update(Buffer.from(String(plaintext), 'utf8')), cipher.final()]);
+  return `${encrypted.toString('base64')}?iv=${iv.toString('base64')}`;
+}
+
+export function nip04Decrypt(secretHex, peerPubkeyHex, payload) {
+  const [ciphertext, ivPart] = String(payload).split('?iv=');
+  if (!ivPart) throw new Error('invalid nip04 payload: missing iv');
+  const key = nip04SharedKey(secretHex, peerPubkeyHex);
+  const decipher = createDecipheriv('aes-256-cbc', key, Buffer.from(ivPart, 'base64'));
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]);
+  return decrypted.toString('utf8');
 }
 
 export function derivePubkeyHexFromNsec(nsec) {

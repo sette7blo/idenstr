@@ -11,6 +11,22 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Changed: removed Idenstr's in-app dashboard username/password login entirely. The dashboard now opens directly on the trusted server/LAN/mesh, while linked apps still authenticate with scoped bearer tokens and `/api/v1/sign` still requires a bearer token for attribution.
+
+- Fixed: the API-token screen now has a `zaps:write` checkbox, so a least-privilege app token (e.g. Feedstr) can actually be granted zap permission through the form instead of failing its scope check.
+
+- Fixed: outgoing zaps now decode the bolt11 invoice returned by the recipient's LNURL service and refuse to pay it unless it commits to exactly the sats chosen, so a misbehaving LNURL endpoint cannot have the wallet pay a different amount.
+
+- Fixed: a single zap no longer writes two activity-log rows (one generic payment line plus the zap line).
+
+- Fixed LNURL zap validation for hosted/custodial Lightning Address providers whose `nostrPubkey` is the zap service receipt signer rather than the recipient profile pubkey.
+
+- Improved outgoing zap receipt discoverability by always adding public relay fallbacks to the NIP-57 `relays` tag, so LNURL services do not publish receipts only to private/user-specific relays that receivers may not watch.
+
+- Added NIP-57 zap payment support via a narrow `zaps:write` app scope and `POST /api/v1/zaps/pay`, which signs a zap request with Idenstr, stores it in the local vault, requests the recipient LNURL invoice, and pays it through the configured NWC wallet without exposing the wallet secret to downstream apps.
+### Added
+- Wallet section (Nostr Wallet Connect / NIP-47): connect a lightning wallet with a `nostr+walletconnect://` connection string, read `get_info` and `get_balance`, and pay bolt11 invoices through the wallet. The connection string contains a spending secret and is stored in `.env` as `IDENSTR_NWC_URI` — the same custody model as `IDENSTR_NSEC` — never returned to the browser and never logged. New `GET/PUT /api/v1/wallet` and `POST /api/v1/wallet/{info,balance,pay}` endpoints, all admin-only (the spending surface is never delegated to scoped app tokens). NWC requests are signed with the wallet-issued connection secret (not the identity key) and encrypted with NIP-04.
+
 ## [v1.0.2] — 2026-06-25
 ### Fixed
 - The API-token screen now has checkboxes for `sign:kind:27235` (NIP-98 upload auth, used by Feedstr and Workstr image uploads) and `publish:kind:33401` (NIP-101e exercise templates, used by Workstr). These first-party app scopes previously had to be typed into the free-text "extra scopes" field, so a least-privilege token created by clicking through the form was silently missing them and the app's scope check failed.

@@ -28,6 +28,7 @@ test('capabilities include API-token-linkable identity scopes', () => {
   assert.ok(capabilities.capabilities.includes('following.read'));
   assert.ok(capabilities.capabilities.includes('relays.write'));
   assert.ok(capabilities.capabilities.includes('relays.import'));
+  assert.ok(capabilities.capabilities.includes('zaps.write'));
 });
 
 test('stack topology exposes the private relay URL without secrets', () => {

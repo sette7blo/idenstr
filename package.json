@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/app/system.js && node --check src/app/tokenStore.js && node --check src/app/db.js && node --check src/app/localVault.js && node --check src/app/envFile.js && node --check src/app/signingService.js && node --check src/app/identity.js && node --check src/app/nostrRelay.js && node --check src/app/nostrSigner.js && node --check public/app.js"
+    "check": "node --check src/server.js && node --check src/app/system.js && node --check src/app/tokenStore.js && node --check src/app/db.js && node --check src/app/localVault.js && node --check src/app/envFile.js && node --check src/app/signingService.js && node --check src/app/identity.js && node --check src/app/nostrRelay.js && node --check src/app/nostrSigner.js && node --check src/app/wallet.js && node --check public/app.js"
   },
   "engines": {
     "node": ">=22"

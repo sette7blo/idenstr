@@ -74,8 +74,8 @@ IDENSTR_NPUB=your-npub-here
 IDENSTR_NSEC=your-nsec-here
 IDENSTR_HOST_PORT=3000
 IDENSTR_HOST_BIND=0.0.0.0
-IDENSTR_AUTH_USER=admin
-IDENSTR_AUTH_PASSWORD=choose-a-long-password
+# The dashboard is intentionally open on your trusted server/LAN/mesh.
+# Other *str apps authenticate with scoped bearer tokens.
 # The private relay is LAN-by-default so your other *str apps (on this host or
 # another on the same LAN) can reach it. Run scripts/detect-lan-ip.sh to fill
 # these from your host's LAN IP, or set them by hand.
@@ -93,7 +93,7 @@ docker compose up -d --build
 
 The **private relay** is the embedded Strfry write-ahead vault. There is one URL for it (`IDENSTR_PRIVATE_RELAY_URL`): Idenstr writes its own canonical events there, advertises it to your other *str apps, and prefills it in the dashboard's relay panel. You can edit it there and save — that rewrites `.env`; recreate the container (`docker compose up -d`) to apply.
 
-Open `http://<host>:3000` and log in with the username and password you set in `IDENSTR_AUTH_USER` / `IDENSTR_AUTH_PASSWORD`. The default bind is `0.0.0.0`, so the dashboard is reachable across your LAN or Tailscale/WireGuard mesh; set `IDENSTR_HOST_BIND=127.0.0.1` if you want it local-only. Idenstr refuses to start when bound beyond localhost without credentials. For access from outside your LAN/mesh, put it behind an HTTPS reverse proxy — Basic credentials are not encrypted on their own.
+Open `http://<host>:3000`. The dashboard is intentionally open on your trusted server/LAN/Tailscale/WireGuard mesh, so there is no in-app username/password login. Set `IDENSTR_HOST_BIND=127.0.0.1` if you want it local-only. For access from outside your trusted network, put Idenstr behind your reverse proxy, VPN, or another network access layer.
 
 Other *str apps connect the other way around: generate a scoped token in the dashboard (API tokens section), then enter Idenstr's address and that token in the app's settings — they live in the app's `.env`.
 
@@ -108,8 +108,6 @@ All configuration is in `.env`. See `.env.example` for all available options.
 |---|---|---|
 | `IDENSTR_NSEC` | Yes | Your Nostr private key (nsec format), held only by Idenstr |
 | `IDENSTR_NPUB` | Yes | Your Nostr public key (npub format) |
-| `IDENSTR_AUTH_USER` | Yes* | Dashboard login username (HTTP Basic). *Required unless bound to `127.0.0.1` |
-| `IDENSTR_AUTH_PASSWORD` | Yes* | Dashboard login password (HTTP Basic). *Required unless bound to `127.0.0.1`; Idenstr refuses to start without it when exposed beyond localhost |
 | `IDENSTR_ADMIN_TOKEN` | No | Optional admin bearer token for scripts and curl |
 | `IDENSTR_HOST_BIND` | No | Host/IP for Docker to expose the dashboard on, default `0.0.0.0` (LAN/mesh reachable); set `127.0.0.1` for local-only |
 | `IDENSTR_HOST_PORT` | No | Host port, default `3000` |

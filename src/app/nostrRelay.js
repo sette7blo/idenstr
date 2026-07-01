@@ -84,6 +84,53 @@ export async function publishEventToRelays(event, relays, options = {}) {
   return { event, results, ok: results.some((result) => result.accepted) };
 }
 
+// One-shot NWC (NIP-47) request/response over a single socket: subscribe for the
+// wallet's kind:23195 response tagged to our request id first, then publish the
+// kind:23194 request so a fast reply is never missed. Resolves with the matching
+// response event or an error.
+export async function nwcRequest(relay, requestEvent, walletPubkey, timeoutMs = 12000) {
+  if (typeof WebSocket === 'undefined') {
+    return { ok: false, error: 'WebSocket unavailable in this Node runtime' };
+  }
+
+  return new Promise((resolve) => {
+    const subscriptionId = `nwc-${Math.random().toString(36).slice(2)}`;
+    let settled = false;
+    let socket;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { socket?.close(); } catch {}
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: 'wallet response timed out' }), timeoutMs);
+    try {
+      socket = new WebSocket(relay);
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify(['REQ', subscriptionId, { kinds: [23195], authors: [walletPubkey], '#e': [requestEvent.id], limit: 1 }]));
+        socket.send(JSON.stringify(['EVENT', requestEvent]));
+      });
+      socket.addEventListener('message', (message) => {
+        const parsed = parseRelayMessage(message.data);
+        if (!parsed) return;
+        const [type, first, second] = parsed;
+        if (type === 'OK' && first === requestEvent.id && second === false) {
+          finish({ ok: false, error: `relay rejected request: ${parsed[3] || 'unknown'}` });
+        } else if (type === 'EVENT' && first === subscriptionId && second?.kind === 23195) {
+          finish({ ok: true, response: second });
+        } else if (type === 'CLOSED' && first === subscriptionId) {
+          finish({ ok: false, error: `relay closed subscription: ${parsed[2] || ''}` });
+        }
+      });
+      socket.addEventListener('error', () => finish({ ok: false, error: 'relay websocket error' }));
+      socket.addEventListener('close', () => finish({ ok: false, error: 'relay connection closed' }));
+    } catch (error) {
+      finish({ ok: false, error: error.message });
+    }
+  });
+}
+
 async function publishRelayEvent(relay, event, timeoutMs) {
   if (typeof WebSocket === 'undefined') {
     return { relay, status: 'error', accepted: false, error: 'WebSocket unavailable in this Node runtime' };

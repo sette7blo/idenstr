@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=phase3-cards-1" />
+  <link rel="stylesheet" href="./styles.css?v=phase4-wallet-2" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -52,6 +52,7 @@
       </section>
       <div class="card-group-label">Settings<small>How this server runs</small></div>
       <section class="main-grid">
+        <article class="panel metric"><span class="metric-label">Wallet</span><strong id="wallet-indicator">—</strong><p>Connect a lightning wallet over NWC to read balance and pay invoices.</p><a href="#wallet" data-tab="wallet">Open wallet</a></article>
         <article class="panel metric"><span class="metric-label">Connected apps</span><strong id="token-count">—</strong><p>Scoped tokens that let your other *str apps act through this identity.</p><a href="#tokens" data-tab="tokens">Manage access</a></article>
         <article class="panel metric"><span class="metric-label">Backups</span><strong id="backup-count">0</strong><p>One file bundling your app database and private relay vault; nsec excluded.</p><a href="#backups" data-tab="backups">Backup state</a></article>
         <article class="panel metric"><span class="metric-label">Activity log</span><strong id="audit-count">0</strong><p>Recent signing, publishing, and config actions on this server.</p><a href="#audit" data-tab="audit">View log</a></article>
@@ -229,6 +230,30 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
       <p class="section-help">Backups bundle this vault together with your app database — see <a href="#backups" data-tab="backups">Backups</a>.</p>
     </section>
 
+    <section id="wallet" class="workbench panel view" data-view="wallet">
+      <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
+      <div class="panel-head"><span>Wallet</span><strong>NWC</strong></div>
+      <p class="section-help">Connect a lightning wallet over Nostr Wallet Connect (NIP-47). Idenstr can read your balance and pay invoices through the wallet — it never holds your funds. The connection string contains a spending secret: it is stored in .env alongside your nsec, never shown again, and never sent back to this page. Paste a fresh connection string to reconnect, or disconnect to remove it.</p>
+      <form id="wallet-form" class="form-grid">
+        <label class="span-2">NWC connection string<input name="uri" type="password" autocomplete="off" placeholder="nostr+walletconnect://..." /><small>From your wallet (Alby Hub, Coinos, Mutiny, etc.). Saving rewrites .env and takes effect immediately; it also persists across restarts.</small></label>
+        <button class="button primary" type="submit">Save connection</button>
+        <button class="button ghost" type="button" id="disconnect-wallet">Disconnect</button>
+      </form>
+      <div id="wallet-status" class="terminal-mini">No wallet connected yet. Paste a connection string above and save.</div>
+      <div class="subsection-head"><span>Wallet state</span><small>Read on demand from the connected wallet</small></div>
+      <div class="wallet-actions">
+        <button class="button ghost" type="button" id="wallet-refresh-info">Refresh info</button>
+        <button class="button ghost" type="button" id="wallet-refresh-balance">Refresh balance</button>
+      </div>
+      <div id="wallet-info" class="relay-list empty">Connect a wallet, then refresh to read its info and balance.</div>
+      <div class="subsection-head"><span>Pay an invoice</span><small>Send a one-off bolt11 payment</small></div>
+      <form id="wallet-pay-form" class="form-grid">
+        <label class="span-2">Bolt11 invoice<textarea name="invoice" rows="3" autocomplete="off" placeholder="lnbc..."></textarea></label>
+        <button class="button primary" type="submit">Pay invoice</button>
+      </form>
+      <div id="wallet-pay-status" class="terminal-mini">Paste a bolt11 invoice and pay it through the connected wallet. Payments are recorded in your activity log.</div>
+    </section>
+
     <section id="backups" class="workbench panel view" data-view="backups">
       <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
       <div class="panel-head"><span>Backups</span><strong>db + vault</strong></div>
@@ -266,16 +291,17 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
             <label><input type="checkbox" name="scope" value="sign:kind:6" /> Sign reposts (kind 6)</label>
             <label><input type="checkbox" name="scope" value="sign:kind:7" /> Sign reactions (kind 7)</label>
             <label><input type="checkbox" name="scope" value="sign:kind:5" /> Sign deletes / undo, e.g. unlike (kind 5)</label>
-            <label><input type="checkbox" name="scope" value="sign:kind:30078" /> Sign app data, e.g. Workstr sheets (kind 30078)</label>
             <label><input type="checkbox" name="scope" value="sign:kind:27235" /> Sign upload auth, e.g. Feedstr/Workstr images (NIP-98, kind 27235)</label>
             <label><input type="checkbox" name="scope" value="publish:kind:1" /> <strong>Publish</strong> notes/summaries to relays (kind 1)</label>
             <label><input type="checkbox" name="scope" value="publish:kind:33401" /> <strong>Publish</strong> exercise templates to relays, e.g. Workstr (NIP-101e, kind 33401)</label>
+            <label><input type="checkbox" name="scope" value="publish:kind:33402" /> <strong>Publish</strong> workout programs to relays, e.g. Workstr (NIP-101e, kind 33402)</label>
             <label><input type="checkbox" name="scope" value="profile:read" /> Read profile and identity</label>
             <label><input type="checkbox" name="scope" value="relays:read" /> Read relay lists</label>
             <label><input type="checkbox" name="scope" value="following:read" /> Read following list</label>
             <label><input type="checkbox" name="scope" value="following:write" /> Follow / unfollow (publishes kind:3)</label>
             <label><input type="checkbox" name="scope" value="mutes:read" /> Read mute list</label>
             <label><input type="checkbox" name="scope" value="mutes:write" /> Mute / unmute (publishes kind:10000)</label>
+            <label><input type="checkbox" name="scope" value="zaps:write" /> <strong>Zap</strong> — pay NIP-57 zaps through the connected wallet, e.g. Feedstr</label>
             <input type="text" name="extra" placeholder="extra scopes (optional), e.g. sign:kind:30023" />
           </div>
           <button class="button primary" type="submit">Create token</button>
@@ -326,6 +352,6 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
     </section>
   </main>
 
-  <script src="./app.js?v=phase3-cards-1" defer></script>
+  <script src="./app.js?v=phase4-wallet-2" defer></script>
 </body>
 </html>
