@@ -11,6 +11,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.1.0] — 2026-07-01
+
 - Changed: removed Idenstr's in-app dashboard username/password login entirely. The dashboard now opens directly on the trusted server/LAN/mesh, while linked apps still authenticate with scoped bearer tokens and `/api/v1/sign` still requires a bearer token for attribution.
 
 - Fixed: the API-token screen now has a `zaps:write` checkbox, so a least-privilege app token (e.g. Feedstr) can actually be granted zap permission through the form instead of failing its scope check.
@@ -101,7 +103,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.1.0...HEAD
+[v1.1.0]: https://github.com/sette7blo/idenstr/compare/v1.0.2...v1.1.0
 [v1.0.2]: https://github.com/sette7blo/idenstr/compare/v1.0.1...v1.0.2
 [v1.0.1]: https://github.com/sette7blo/idenstr/compare/v1.0.0...v1.0.1
 [v1.0.0]: https://github.com/sette7blo/idenstr/compare/v0.1.1...v1.0.0
