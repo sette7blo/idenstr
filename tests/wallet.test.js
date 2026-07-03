@@ -96,3 +96,12 @@ test('signEventWithSecret derives the matching pubkey and signs a kind:23194 req
 test('signEventWithSecret rejects non-32-byte secrets', () => {
   assert.throws(() => signEventWithSecret('abcd', { kind: 23194, created_at: 1, tags: [], content: '' }), /32 bytes/);
 });
+
+
+test('scoped zap apps can read safe wallet balance without wallet admin access', async () => {
+  const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../src/server.js', import.meta.url), 'utf8'));
+  assert.match(source, /url\.pathname === '\/api\/v1\/zaps\/wallet'/);
+  assert.match(source, /url\.pathname === '\/api\/v1\/zaps\/wallet\/balance'/);
+  assert.match(source, /pathname === '\/api\/v1\/zaps\/wallet' \|\| pathname === '\/api\/v1\/zaps\/wallet\/balance'\) return 'zaps:write'/);
+  assert.match(source, /pathname\.startsWith\('\/api\/v1\/wallet'\)\) return 'admin'/);
+});

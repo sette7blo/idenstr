@@ -102,6 +102,8 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/wallet/info') return sendJson(res, 200, await walletInfo());
   if (req.method === 'POST' && url.pathname === '/api/v1/wallet/balance') return sendJson(res, 200, await walletBalance());
   if (req.method === 'POST' && url.pathname === '/api/v1/wallet/pay') return sendJson(res, 200, await payInvoice(await readJson(req)));
+  if (req.method === 'GET' && url.pathname === '/api/v1/zaps/wallet') return sendJson(res, 200, getWallet());
+  if (req.method === 'POST' && url.pathname === '/api/v1/zaps/wallet/balance') return sendJson(res, 200, await walletBalance());
   if (req.method === 'POST' && url.pathname === '/api/v1/zaps/pay') return sendJson(res, 200, await payZap(await readJson(req)));
 
   if (req.method === 'GET' && url.pathname === '/api/v1/tuning') { const state = await loadState(); return sendJson(res, 200, state.tuning); }
@@ -222,7 +224,9 @@ function requiredScope(method, pathname) {
   // how /sign authorizes per sign:kind scope, so scoped apps can publish without admin.
   if (pathname === '/api/v1/events/publish') return null;
   // The NWC wallet is a spending surface: connecting it and moving arbitrary
-  // invoices stays admin-only. Scoped apps get only the narrow NIP-57 zap endpoint.
+  // invoices stays admin-only. Scoped apps get only narrow zap-specific access:
+  // read zap-wallet readiness/balance and pay NIP-57 zap invoices.
+  if (pathname === '/api/v1/zaps/wallet' || pathname === '/api/v1/zaps/wallet/balance') return 'zaps:write';
   if (pathname === '/api/v1/zaps/pay') return 'zaps:write';
   if (pathname.startsWith('/api/v1/wallet')) return 'admin';
   return 'admin';
