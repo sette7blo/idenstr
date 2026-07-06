@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.2.0] — 2026-07-06
+
+- Added narrow zap-wallet read access for scoped apps: `GET /api/v1/zaps/wallet` (cached readiness/balance, no NWC round-trip) and `POST /api/v1/zaps/wallet/balance` (live NWC balance check), both under the existing `zaps:write` scope. Lets clients like Feedstr show wallet status without an admin token; the NWC connection secret is never included and the full `/api/v1/wallet` surface stays admin-only.
+
 ## [v1.1.0] — 2026-07-01
 
 - Changed: removed Idenstr's in-app dashboard username/password login entirely. The dashboard now opens directly on the trusted server/LAN/mesh, while linked apps still authenticate with scoped bearer tokens and `/api/v1/sign` still requires a bearer token for attribution.
@@ -103,7 +107,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/sette7blo/idenstr/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/sette7blo/idenstr/compare/v1.0.2...v1.1.0
 [v1.0.2]: https://github.com/sette7blo/idenstr/compare/v1.0.1...v1.0.2
 [v1.0.1]: https://github.com/sette7blo/idenstr/compare/v1.0.0...v1.0.1
