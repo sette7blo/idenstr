@@ -7,6 +7,7 @@ import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInf
 import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
+import { decryptNip44, dmCapabilities, encryptNip44, listDmInbox, sendDm, unwrapDm, wrapDm } from './app/dms.js';
 import { loadState, saveState, addAudit, DEFAULT_TUNING } from './app/state.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -39,6 +40,21 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/sign') {
     const result = await authorizeAndSign({ principal: req.principal, unsignedEvent: await readJson(req) });
     return sendJson(res, result.status, result.body);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/v1/dms/capabilities') return sendJson(res, 200, dmCapabilities());
+  if (req.method === 'GET' && url.pathname === '/api/v1/dms') return sendJson(res, 200, await listDmInbox());
+  if (req.method === 'POST' && url.pathname === '/api/v1/dms/nip44/encrypt') return sendJson(res, 200, await encryptNip44(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/dms/nip44/decrypt') return sendJson(res, 200, await decryptNip44(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/dms/wrap') {
+    const denied = denyMissingScopes(req.principal, ['dms:write', 'sign:kind:13', 'sign:kind:1059']);
+    if (denied) return sendJson(res, 403, denied);
+    return sendJson(res, 200, await wrapDm(await readJson(req)));
+  }
+  if (req.method === 'POST' && url.pathname === '/api/v1/dms/unwrap') return sendJson(res, 200, await unwrapDm(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/dms/send') {
+    const denied = denyMissingScopes(req.principal, ['dms:write', 'sign:kind:13', 'sign:kind:1059']);
+    if (denied) return sendJson(res, 403, denied);
+    return sendJson(res, 200, await sendDm(await readJson(req)));
   }
   if (req.method === 'GET' && url.pathname === '/api/v1/system/info') return sendJson(res, 200, getSystemInfo());
   if (req.method === 'GET' && url.pathname === '/api/v1/capabilities') return sendJson(res, 200, getCapabilities());
@@ -186,6 +202,9 @@ async function authorizeRequest(req, url) {
   if (url.pathname === '/api/v1/sign') {
     return { ok: false, status: 401, body: { error: 'unauthorized', detail: 'signing requires a bearer token with a sign:kind scope' } };
   }
+  if (url.pathname.startsWith('/api/v1/dms')) {
+    return { ok: false, status: 401, body: { error: 'unauthorized', detail: 'DM crypto requires a bearer token with narrow dms/encrypt/decrypt scopes' } };
+  }
   return { ok: true, principal: { id: 'dashboard', name: 'dashboard', scopes: ['admin'], type: 'dashboard' } };
 }
 
@@ -199,9 +218,21 @@ function publicPrincipal(principal) {
   return { id: principal.id, name: principal.name, scopes: principal.scopes, rateLimit: principal.rateLimit, type: principal.type };
 }
 
+function denyMissingScopes(principal, scopes) {
+  const missing = scopes.filter(scope => !hasScope(principal?.scopes ?? [], scope));
+  return missing.length ? { error: 'scope_denied', required: missing[0], missing } : null;
+}
+
 function requiredScope(method, pathname) {
   if (pathname === '/api/v1/whoami') return null;
   if (pathname === '/api/v1/sign') return null;
+  if (pathname === '/api/v1/dms/capabilities') return 'dms:read';
+  if (pathname === '/api/v1/dms') return 'dms:read';
+  if (pathname === '/api/v1/dms/nip44/encrypt') return 'encrypt:nip44';
+  if (pathname === '/api/v1/dms/nip44/decrypt') return 'decrypt:nip44';
+  if (pathname === '/api/v1/dms/wrap') return 'dms:write';
+  if (pathname === '/api/v1/dms/unwrap') return 'dms:read';
+  if (pathname === '/api/v1/dms/send') return 'dms:write';
   if (pathname === '/api/v1/system/info' || pathname === '/api/v1/capabilities' || pathname === '/api/v1/overview' || pathname === '/api/v1/dashboard') return 'admin';
   if (pathname === '/api/v1/stack') return 'relays:read';
   if (pathname.startsWith('/api/v1/api-tokens')) return 'admin';

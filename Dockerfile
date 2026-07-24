@@ -3,7 +3,8 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production     IDENSTR_BIND_HOST=0.0.0.0     IDENSTR_BIND_PORT=3000     IDENSTR_DB_STORE=/data/idenstr.db     IDENSTR_TOKEN_STORE=/data/api-tokens.json     IDENSTR_STATE_STORE=/data/idenstr-state.json
 
-COPY package.json ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY src ./src
 COPY public ./public
 COPY README.md ./README.md
