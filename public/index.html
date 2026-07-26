@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=phase4-wallet-2" />
+  <link rel="stylesheet" href="./styles.css?v=phase4-dmrelays-1" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -186,8 +186,8 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
 
     <section id="relays" class="workbench panel view" data-view="relays">
       <a class="section-back" href="#overview" data-tab="overview">← Identity overview</a>
-      <div class="panel-head"><span>Public Relays</span><strong>kind:10002</strong></div>
-      <p class="section-help">Your public relay policy: which relays Idenstr reads from and writes to. The draft policy is the source of truth. Publish signs it as a kind:10002 relay-list event, writes it to your private relay, then broadcasts it to your write relays. Scan checks public relay state, shows mismatches, and lets you add trusted published relays into the policy. Your private relay is managed separately under Private relay.</p>
+      <div class="panel-head"><span>Public Relays</span><strong>kind:10002 · 10050</strong></div>
+      <p class="section-help">Your public relay policy: which relays Idenstr reads from, writes to, and receives DMs on. The draft policy is the source of truth. Publish signs the read/write list as kind:10002 and the DM relay list as kind:10050 (NIP-17), writes both to your private relay, then broadcasts them to your write relays. DM relays are where other people's clients drop your gift-wrapped DMs — keep them to a small, trusted set. Scan checks public relay state and mismatches. Your private relay is managed separately under Private relay.</p>
       <div class="state-strip" data-strip="relays" aria-label="Where this relay list currently lives">
         <span class="state-seg" data-store="draft">Draft</span>
         <span class="state-seg" data-store="private">Private relay</span>
@@ -197,6 +197,7 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
         <label>Relay URL<input name="url" placeholder="wss://relay.example" autocomplete="off" /></label>
         <label class="relay-role-toggle add-role"><input name="read" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Read</strong><small>Use for fetching</small></span></label>
         <label class="relay-role-toggle add-role"><input name="write" type="checkbox" checked /><span class="relay-check" aria-hidden="true"></span><span><strong>Write</strong><small>Use for publishing</small></span></label>
+        <label class="relay-role-toggle add-role"><input name="dm" type="checkbox" /><span class="relay-check" aria-hidden="true"></span><span><strong>DM</strong><small>Receive DMs here</small></span></label>
         <button class="button primary" type="submit">Add relay</button>
       </form>
       <div class="subsection-head"><span>Relay policy</span><small>Ranked by follow popularity after scan</small></div>
@@ -206,6 +207,7 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
       <form id="relay-form" class="form-grid relay-policy-form">
         <label class="relay-raw-field">Read relays<textarea name="read" rows="4"></textarea></label>
         <label class="relay-raw-field">Write relays<textarea name="write" rows="4"></textarea></label>
+        <label class="relay-raw-field">DM relays (kind:10050)<textarea name="dm" rows="4" placeholder="Where senders drop your NIP-17 DMs — a small, trusted set"></textarea></label>
         <button class="button primary" type="submit">Save relay policy</button>
         <button class="button ghost" type="button" id="publish-relays">Publish relay list</button>
         <button class="button ghost" type="button" id="scan-relays">Scan & compare published state</button>
@@ -352,6 +354,6 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
     </section>
   </main>
 
-  <script src="./app.js?v=phase4-wallet-2" defer></script>
+  <script src="./app.js?v=phase4-dmrelays-1" defer></script>
 </body>
 </html>

@@ -52,11 +52,15 @@ function defaultState() {
   const now = new Date().toISOString();
   const read = normalizeRelays(process.env.IDENSTR_DEFAULT_READ_RELAYS || 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net');
   const write = normalizeRelays(process.env.IDENSTR_DEFAULT_WRITE_RELAYS || 'wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net');
+  // NIP-17 DM relays (kind:10050): where senders drop your gift-wrapped DMs.
+  // Deliberately separate from read/write, and empty by default — a small,
+  // trusted set the operator opts into.
+  const dm = normalizeRelays(process.env.IDENSTR_DEFAULT_DM_RELAYS || '');
   return {
     profile: { name: 'primary', displayName: 'Primary Nostr Identity', about: 'Canonical profile draft held by Idenstr.', website: '', picture: '', banner: '', updatedAt: now, event: buildCanonicalEvent(0, { name: 'primary' }) },
     following: { entries: [], directory: {}, directoryUpdatedAt: null, updatedAt: now, event: buildCanonicalEvent(3, []) },
     mutes: { entries: [], updatedAt: now, event: buildCanonicalEvent(10000, []) },
-    relays: { read, write, private: privateRelayUrl() || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), scan: [] },
+    relays: { read, write, dm, private: privateRelayUrl() || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), dmEvent: buildCanonicalEvent(10050, { dm }), scan: [] },
     tuning: { ...DEFAULT_TUNING },
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
   };
@@ -64,7 +68,7 @@ function defaultState() {
 
 function mergeDefaults(state) {
   const defaults = defaultState();
-  return { ...defaults, ...state, mutes: { ...defaults.mutes, ...(state.mutes ?? {}) }, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
+  return { ...defaults, ...state, mutes: { ...defaults.mutes, ...(state.mutes ?? {}) }, relays: { ...defaults.relays, ...(state.relays ?? {}) }, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
 }
 
 export function buildCanonicalEvent(kind, content) {

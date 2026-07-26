@@ -18,6 +18,9 @@ export async function saveRelays(relays) {
   state.relays = {
     read: normalizeRelays(relays.read),
     write: normalizeRelays(relays.write),
+    // New field: preserve the existing DM list when a caller omits it (e.g. a
+    // read/write-only toggle), rather than wiping it.
+    dm: relays.dm !== undefined ? normalizeRelays(relays.dm) : normalizeRelays(state.relays?.dm),
     private: nextPrivate,
     updatedAt: new Date().toISOString()
   };
@@ -35,6 +38,7 @@ export async function saveRelays(relays) {
     }
   }
   state.relays.event = buildCanonicalEvent(10002, state.relays);
+  state.relays.dmEvent = buildCanonicalEvent(10050, { dm: state.relays.dm });
   state.relays.scan = [];
   state.relays.consistency = null;
   state.relays.popularity = null;
@@ -142,8 +146,50 @@ export async function publishRelays() {
   state.relays.lastPublish = { at: new Date().toISOString(), ...state.relays.event };
   state.relays.consistency = relayListConsistency(state.relays, event);
   addAudit(state, published.ok ? 'relays.published' : 'relays.publish_failed', `${published.results.filter((result) => result.accepted).length}/${published.results.length} write relays accepted kind:10002 relay list`);
+  const dmPublished = await publishDmList(state, nsec);
   await saveState(state);
-  return { relays: state.relays, published };
+  return { relays: state.relays, published, dmPublished };
+}
+
+// Publish the NIP-17 DM relay list (kind:10050) so senders know where to deliver
+// your gift-wrapped DMs. Announced to your write relays and the DM relays
+// themselves. Returns the publish result, or null when no DM relays are set.
+async function publishDmList(state, nsec) {
+  const dm = normalizeRelays(state.relays.dm);
+  if (!dm.length) {
+    state.relays.dmEvent = buildCanonicalEvent(10050, { dm });
+    return null;
+  }
+  const event = signNostrEvent(nsec, {
+    kind: 10050,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: dmRelayTags(state.relays),
+    content: ''
+  });
+  const targets = [...new Set([...(state.relays.write ?? []), ...dm])];
+  const local = await storeEventLocally(event);
+  if (!local.accepted) {
+    state.relays.dmEvent = { id: event.id, kind: event.kind, created_at: event.created_at, status: 'local-write-failed', signed: true, event, localVault: local };
+    state.relays.dmLastPublish = { at: new Date().toISOString(), ...state.relays.dmEvent };
+    addAudit(state, 'relays.dm_publish_failed', `Local vault rejected/unreachable for kind:10050: ${local.message}`);
+    return { error: 'vault_unavailable', published: null };
+  }
+  const published = await publishEventToRelays(event, targets, { timeoutMs: 6500 });
+  state.relays.dmEvent = {
+    id: event.id,
+    kind: event.kind,
+    created_at: event.created_at,
+    status: published.ok ? 'published' : 'publish-attempted',
+    signed: true,
+    acceptedRelays: published.results.filter((result) => result.accepted).map((result) => result.relay),
+    rejectedRelays: published.results.filter((result) => !result.accepted).map((result) => ({ relay: result.relay, status: result.status, message: result.message || result.error || '' })),
+    relayResults: published.results.map((result) => ({ relay: result.relay, status: result.status, accepted: Boolean(result.accepted), message: result.message || result.error || '', latencyMs: result.latencyMs })),
+    event,
+    localVault: local
+  };
+  state.relays.dmLastPublish = { at: new Date().toISOString(), ...state.relays.dmEvent };
+  addAudit(state, published.ok ? 'relays.dm_published' : 'relays.dm_publish_failed', `${published.results.filter((result) => result.accepted).length}/${published.results.length} relays accepted kind:10050 DM relay list`);
+  return published;
 }
 
 export async function scanRelays() {
@@ -199,6 +245,12 @@ function relayListTags(relays) {
   for (const relay of read) tags.push(['r', relay, 'read']);
   for (const relay of write) tags.push(['r', relay, 'write']);
   return tags;
+}
+
+// NIP-17 kind:10050 uses plain `relay` tags (no read/write marker).
+function dmRelayTags(relays) {
+  const dm = new Set(normalizeRelays(relays.dm));
+  return [...dm].map((relay) => ['relay', relay]);
 }
 
 function parseRelayListEvent(event) {

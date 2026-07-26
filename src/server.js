@@ -266,7 +266,7 @@ function requiredScope(method, pathname) {
 // Sign-and-publish authorization for app tokens. Admin bypasses. Scoped tokens
 // need publish:events or publish:kind:<n>, and may not publish Idenstr-owned
 // identity kinds (those have dedicated endpoints).
-const PUBLISH_OWNED_KINDS = new Set([0, 3, 10000, 10002]);
+const PUBLISH_OWNED_KINDS = new Set([0, 3, 10000, 10002, 10050]);
 function denyPublish(principal, payload) {
   const scopes = principal?.scopes ?? [];
   if (scopes.includes('admin')) return null;

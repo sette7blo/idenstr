@@ -130,6 +130,7 @@ function render(data) {
   fillForm(els.profileForm, profile);
   els.relayForm.elements.read.value = relays.read.join('\n');
   els.relayForm.elements.write.value = relays.write.join('\n');
+  if (els.relayForm.elements.dm) els.relayForm.elements.dm.value = (relays.dm || []).join('\n');
   if (els.privateRelayForm) els.privateRelayForm.elements.url.value = relays.private || '';
   if (els.privateRelayIndicator) els.privateRelayIndicator.textContent = relays.private ? '1' : '0';
   if (els.walletIndicator) els.walletIndicator.textContent = data.wallet?.configured ? 'connected' : 'none';
@@ -729,10 +730,11 @@ function formatRelayConsistency(consistency) {
 function renderRelayList(relays) {
   const scanByUrl = new Map((relays.scan || []).map((row) => [normalizeRelayUrl(row.url), row]));
   const popularityByUrl = new Map((relays.popularity?.local || []).map((row) => [normalizeRelayUrl(row.url), row]));
-  const rows = [...new Set([...relays.read, ...relays.write])].map((url) => ({
+  const rows = [...new Set([...relays.read, ...relays.write, ...(relays.dm || [])])].map((url) => ({
     url,
     read: relays.read.includes(url),
     write: relays.write.includes(url),
+    dm: (relays.dm || []).includes(url),
     scan: scanByUrl.get(normalizeRelayUrl(url)),
     popularity: popularityByUrl.get(normalizeRelayUrl(url))
   })).sort((a, b) => {
@@ -765,6 +767,11 @@ function renderRelayList(relays) {
             <input type="checkbox" ${row.write ? 'checked' : ''} aria-label="Write enabled for ${escapeHtml(row.url)}" />
             <span class="relay-check" aria-hidden="true"></span>
             <span><strong>Write</strong><small>publish</small></span>
+          </label>
+          <label class="relay-role-toggle ${row.dm ? 'is-on' : ''}" data-toggle-relay="dm" data-relay-url="${escapeHtml(row.url)}">
+            <input type="checkbox" ${row.dm ? 'checked' : ''} aria-label="DM enabled for ${escapeHtml(row.url)}" />
+            <span class="relay-check" aria-hidden="true"></span>
+            <span><strong>DM</strong><small>receive</small></span>
           </label>
           <button class="button ghost" data-remove-relay="${escapeHtml(row.url)}">Remove</button>
         </div>
@@ -1452,10 +1459,12 @@ els.relayAddForm.addEventListener('submit', async (event) => {
   await withButtonState(els.relayAddForm.querySelector('button[type="submit"]'), async () => {
     const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
     const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+    const dm = new Set((els.relayForm.elements.dm?.value || '').split('\n').map(normalizeRelayUrl).filter(Boolean));
     if (form.get('read')) read.add(url);
     if (form.get('write')) write.add(url);
-    if (!form.get('read') && !form.get('write')) read.add(url);
-    await saveRelayPolicy([...read], [...write]);
+    if (form.get('dm')) dm.add(url);
+    if (!form.get('read') && !form.get('write') && !form.get('dm')) read.add(url);
+    await saveRelayPolicy([...read], [...write], [...dm]);
     els.relayAddForm.reset();
     els.relayAddForm.elements.read.checked = true;
     els.relayAddForm.elements.write.checked = true;
@@ -1469,12 +1478,14 @@ els.relayList.addEventListener('click', async (event) => {
   const toggleButton = event.target.closest('[data-toggle-relay]');
   const read = new Set(els.relayForm.elements.read.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
   const write = new Set(els.relayForm.elements.write.value.split('\n').map(normalizeRelayUrl).filter(Boolean));
+  const dm = new Set((els.relayForm.elements.dm?.value || '').split('\n').map(normalizeRelayUrl).filter(Boolean));
   if (removeButton) {
     const url = normalizeRelayUrl(removeButton.dataset.removeRelay);
     await withButtonState(removeButton, async () => {
       read.delete(url);
       write.delete(url);
-      await saveRelayPolicy([...read], [...write]);
+      dm.delete(url);
+      await saveRelayPolicy([...read], [...write], [...dm]);
       els.relayActivity.textContent = `Removed ${url} from relay policy. Nothing was published.`;
       await refresh();
     });
@@ -1482,10 +1493,11 @@ els.relayList.addEventListener('click', async (event) => {
   }
   if (toggleButton) {
     const url = normalizeRelayUrl(toggleButton.dataset.relayUrl);
-    const target = toggleButton.dataset.toggleRelay === 'write' ? write : read;
+    const role = toggleButton.dataset.toggleRelay;
+    const target = role === 'write' ? write : role === 'dm' ? dm : read;
     target.has(url) ? target.delete(url) : target.add(url);
-    if (!read.has(url) && !write.has(url)) read.add(url);
-    await saveRelayPolicy([...read], [...write]);
+    if (!read.has(url) && !write.has(url) && !dm.has(url)) read.add(url);
+    await saveRelayPolicy([...read], [...write], [...dm]);
     await refresh();
   }
 });
@@ -1532,9 +1544,18 @@ document.querySelector('#scan-relays').addEventListener('click', async (event) =
 
 document.querySelector('#publish-relays').addEventListener('click', async (event) => {
   await withButtonState(event.currentTarget, async () => {
-    els.relayActivity.textContent = 'Signing relay policy as kind:10002 and publishing to write relays...';
+    els.relayActivity.textContent = 'Signing relay policy (kind:10002) and DM relays (kind:10050), publishing to write relays...';
     const result = await api('relays/publish', { method: 'POST' });
-    els.relayActivity.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:10002 relay list');
+    let log = formatPublishLog(result.published.event.id, result.published.results, 'kind:10002 relay list');
+    const dm = result.dmPublished;
+    if (dm && Array.isArray(dm.results)) {
+      log += '\n\n' + formatPublishLog(result.relays.dmEvent.id, dm.results, 'kind:10050 DM relay list');
+    } else if (dm && dm.error) {
+      log += `\n\nDM relay list (kind:10050) not published: ${dm.error}.`;
+    } else {
+      log += '\n\nNo DM relays set — kind:10050 not published.';
+    }
+    els.relayActivity.textContent = log;
     await refresh();
   });
 });
@@ -1671,12 +1692,17 @@ function normalizeRelayUrl(value) {
   return withScheme.replace(/^wss?:\/\//i, (scheme) => scheme.toLowerCase()).replace(/\/+$/, '');
 }
 
-async function saveRelayPolicy(read, write) {
+async function saveRelayPolicy(read, write, dm) {
+  // DM defaults to the current textarea so read/write toggles never wipe it.
+  const dmValue = dm !== undefined
+    ? [...new Set(dm)].sort().join('\n')
+    : (els.relayForm.elements.dm?.value || '');
   await api('relays', {
     method: 'PUT',
     body: JSON.stringify({
       read: [...new Set(read)].sort().join('\n'),
-      write: [...new Set(write)].sort().join('\n')
+      write: [...new Set(write)].sort().join('\n'),
+      dm: dmValue
     })
   });
 }
