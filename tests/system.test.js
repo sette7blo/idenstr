@@ -12,7 +12,7 @@ test('system info identifies Idenstr as the first modular *str app', () => {
 });
 
 test('health endpoint exposes service status without leaking secrets', () => {
-  const health = getHealth({ privateRelayUrl: 'ws://192.168.1.50:7777', keyMode: 'env_nsec' });
+  const health = getHealth({ privateRelayUrl: 'ws://idenstr-relay.local:7777', keyMode: 'env_nsec' });
   assert.equal(health.status, 'ok');
   assert.equal(health.services.app, 'ok');
   assert.equal(health.services.privateRelay.configured, true);
@@ -34,9 +34,9 @@ test('capabilities include API-token-linkable identity scopes', () => {
 test('stack topology exposes the private relay URL without secrets', () => {
   const previousUrl = process.env.IDENSTR_PRIVATE_RELAY_URL;
   try {
-    process.env.IDENSTR_PRIVATE_RELAY_URL = 'ws://192.168.1.50:7777';
+    process.env.IDENSTR_PRIVATE_RELAY_URL = 'ws://idenstr-relay.local:7777';
     const stack = getStackTopology();
-    assert.equal(stack.topology.privateRelay.url, 'ws://192.168.1.50:7777');
+    assert.equal(stack.topology.privateRelay.url, 'ws://idenstr-relay.local:7777');
     assert.equal(stack.topology.signing.endpoint, '/api/v1/sign');
     assert.equal(stack.topology.signing.nip46, false);
     assert.equal(JSON.stringify(stack).includes('nsec'), false);
@@ -51,10 +51,10 @@ test('stack topology derives the private relay URL from the LAN IP when no URL i
   const previousPort = process.env.IDENSTR_PRIVATE_RELAY_PORT;
   try {
     delete process.env.IDENSTR_PRIVATE_RELAY_URL;
-    process.env.IDENSTR_LAN_IP = '100.64.0.10';
+    process.env.IDENSTR_LAN_IP = 'idenstr-host.local';
     process.env.IDENSTR_PRIVATE_RELAY_PORT = '7777';
     const stack = getStackTopology();
-    assert.equal(stack.topology.privateRelay.url, 'ws://100.64.0.10:7777');
+    assert.equal(stack.topology.privateRelay.url, 'ws://idenstr-host.local:7777');
   } finally {
     restoreEnv('IDENSTR_PRIVATE_RELAY_URL', previousUrl);
     restoreEnv('IDENSTR_LAN_IP', previousIp);
