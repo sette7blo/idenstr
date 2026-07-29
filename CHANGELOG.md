@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.3.0] — 2026-07-28
+
+- Added scheduled post backend support for linked apps: new `GET/POST/PUT/DELETE /api/v1/scheduled-posts` endpoints, `POST /api/v1/scheduled-posts/:id/publish-now`, scoped `schedule:read` / `schedule:write` token permissions, SQLite persistence, UTC `publish_at` execution with optional client timezone metadata, and a background worker that signs/publishes due kind:1 notes through Idenstr.
 - Added NIP-17 **DM relays** (kind:10050) as a first-class relay category alongside read and write. The Public Relays panel now has a third "DM relays" list — where other people's clients drop your gift-wrapped DMs, kept separate from your read/write policy. Publish signs and broadcasts it as a kind:10050 event (to your write relays and the DM relays themselves) next to the kind:10002 list; `GET /api/v1/relays` now returns `dm` and `dmEvent`. A read/write-only save preserves the DM list rather than wiping it, and kind:10050 is an owned kind (scoped tokens can't publish it via the generic endpoint). Set `IDENSTR_DEFAULT_DM_RELAYS` to seed defaults; empty by default.
 
 ## [v1.2.0] — 2026-07-06
@@ -109,7 +112,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.3.0...HEAD
+[v1.3.0]: https://github.com/sette7blo/idenstr/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/sette7blo/idenstr/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/sette7blo/idenstr/compare/v1.0.2...v1.1.0
 [v1.0.2]: https://github.com/sette7blo/idenstr/compare/v1.0.1...v1.0.2

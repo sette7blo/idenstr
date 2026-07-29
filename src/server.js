@@ -7,6 +7,7 @@ import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInf
 import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
+import { cancelScheduledPost, createScheduledPost, listScheduledPosts, publishScheduledPostNow, startScheduledPostWorker, updateScheduledPost } from './app/scheduledPosts.js';
 import { decryptNip44, dmCapabilities, encryptNip44, listDmInbox, sendDm, unwrapDm, wrapDm } from './app/dms.js';
 import { loadState, saveState, addAudit, DEFAULT_TUNING } from './app/state.js';
 
@@ -111,6 +112,35 @@ async function route(req, res) {
     const denied = denyPublish(req.principal, payload);
     if (denied) return sendJson(res, denied.status, denied.body);
     return sendJson(res, 200, await publishEvent(payload));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/scheduled-posts') return sendJson(res, 200, { scheduledPosts: listScheduledPosts() });
+  if (req.method === 'POST' && url.pathname === '/api/v1/scheduled-posts') {
+    try {
+      return sendJson(res, 201, createScheduledPost(await readJson(req)));
+    } catch (error) {
+      return sendJson(res, 400, { error: error.code || 'invalid_schedule', detail: error.message });
+    }
+  }
+  if (url.pathname.startsWith('/api/v1/scheduled-posts/')) {
+    const parts = url.pathname.split('/').filter(Boolean);
+    const id = decodeURIComponent(parts[3] || '');
+    if (req.method === 'PUT' && parts.length === 4) {
+      try {
+        const updated = updateScheduledPost(id, await readJson(req));
+        return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: 'not_found' });
+      } catch (error) {
+        return sendJson(res, error.code === 'not_editable' ? 409 : 400, { error: error.code || 'invalid_schedule', detail: error.message });
+      }
+    }
+    if (req.method === 'DELETE' && parts.length === 4) {
+      const cancelled = cancelScheduledPost(id);
+      return cancelled ? sendJson(res, 200, cancelled) : sendJson(res, 404, { error: 'not_found' });
+    }
+    if (req.method === 'POST' && parts.length === 5 && parts[4] === 'publish-now') {
+      const published = await publishScheduledPostNow(id);
+      return published ? sendJson(res, 200, published) : sendJson(res, 404, { error: 'not_found' });
+    }
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/wallet') return sendJson(res, 200, getWallet());
@@ -254,6 +284,8 @@ function requiredScope(method, pathname) {
   // Publishing is authorized per-kind inside the route (denyPublish), mirroring
   // how /sign authorizes per sign:kind scope, so scoped apps can publish without admin.
   if (pathname === '/api/v1/events/publish') return null;
+  if (pathname === '/api/v1/scheduled-posts') return method === 'GET' ? 'schedule:read' : 'schedule:write';
+  if (pathname.startsWith('/api/v1/scheduled-posts/')) return method === 'GET' ? 'schedule:read' : 'schedule:write';
   // The NWC wallet is a spending surface: connecting it and moving arbitrary
   // invoices stays admin-only. Scoped apps get only narrow zap-specific access:
   // read zap-wallet readiness/balance and pay NIP-57 zap invoices.
@@ -374,6 +406,7 @@ async function streamGenerator(res, generator) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  startScheduledPostWorker();
   createServer().listen(port, host, () => {
     console.log(`Idenstr listening on http://${host}:${port}`);
     console.log('Dashboard is open on this trusted server/mesh. Apps authenticate with scoped bearer tokens.');

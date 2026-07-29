@@ -66,6 +66,22 @@ export function getDb() {
       detail TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_signing_log_at ON signing_log(at);
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+      id TEXT PRIMARY KEY,
+      kind INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      tags TEXT NOT NULL,
+      publish_at INTEGER NOT NULL,
+      timezone TEXT,
+      scheduled_local TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_event_id TEXT,
+      last_error TEXT,
+      relay_results TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status_publish_at ON scheduled_posts(status, publish_at);
   `);
   return db;
 }
