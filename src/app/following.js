@@ -1,4 +1,4 @@
-import { fetchAuthorProfiles, fetchCurrentRelayState, fetchFollowCurationEvents, fetchFollowRelayLists, publishEventToRelays } from './nostrRelay.js';
+import { fetchAuthorProfiles, fetchCurrentRelayState, fetchFollowCurationEvents, fetchFollowRelayLists, publishEventToRelays, searchRelayProfiles } from './nostrRelay.js';
 import { signNostrEvent } from './nostrSigner.js';
 import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, newestEvent, normalizePubkey, normalizeRelayUrl, parseJsonObject, pubkeyToNpub, randomUUID, saveState } from './state.js';
 import { storeEventLocally } from './localVault.js';
@@ -7,10 +7,55 @@ export async function getFollowing() {
   return (await loadState()).following;
 }
 
+export async function searchPeople(query, options = {}) {
+  const state = await loadState();
+  const q = cleanString(query, 140);
+  if (!q || q.length < 2) return { query: q, results: [], message: 'Type at least 2 characters to search.' };
+  const entries = state.following.entries ?? [];
+  const followed = new Set(entries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean));
+  const relayHints = entries.map((entry) => normalizeRelayUrl(entry.relayHint)).filter(Boolean);
+  const relays = [...new Set([...relayHints, ...(state.relays.read ?? []), ...(state.relays.write ?? [])])];
+  const candidates = new Map();
+
+  addDirectoryMatches(candidates, q, state.following.directory ?? {}, followed);
+
+  const exactPubkey = normalizePubkey(q);
+  if (exactPubkey) {
+    addCandidate(candidates, exactPubkey, { source: q.toLowerCase().startsWith('npub1') ? 'npub' : 'hex', confidence: 'exact', followed: followed.has(exactPubkey) });
+  }
+
+  if (looksLikeNip05(q)) {
+    const resolved = await resolveNip05(q, options.nip05TimeoutMs ?? 5000);
+    if (resolved.pubkey) addCandidate(candidates, resolved.pubkey, { source: 'nip05', confidence: 'exact', nip05: resolved.nip05, followed: followed.has(resolved.pubkey) });
+  }
+
+  if (!exactPubkey && relays.length) {
+    const searched = await searchRelayProfiles(q, relays, { timeoutMs: options.timeoutMs ?? 5500, limit: options.limit ?? 20 });
+    mergeProfileEvents(candidates, searched.events, followed, 'relay-search');
+  }
+
+  const needsProfile = [...candidates.values()].filter((row) => !row.profile).map((row) => row.pubkey);
+  if (needsProfile.length && relays.length) {
+    const profiles = await fetchAuthorProfiles(needsProfile, relays, { timeoutMs: options.timeoutMs ?? 5500, batchSize: 40, limit: needsProfile.length });
+    mergeProfileEvents(candidates, profiles.events, followed, 'profile-fetch');
+  }
+
+  const results = [...candidates.values()]
+    .map((row) => ({ ...row, npub: pubkeyToNpub(row.pubkey), followed: followed.has(row.pubkey) || row.followed, score: candidateScore(row, q) }))
+    .sort((a, b) => b.score - a.score || (b.profileEvent?.created_at ?? 0) - (a.profileEvent?.created_at ?? 0))
+    .slice(0, options.results ?? 20);
+
+  return { query: q, searchedRelays: exactPubkey ? 0 : relays.length, results, message: results.length ? `Found ${results.length} candidate${results.length === 1 ? '' : 's'}.` : 'No matching people found on configured relays.' };
+}
+
 export async function addFollowing(entry) {
   const state = await loadState();
-  const pubkey = cleanString(entry.pubkey, 140);
-  if (!pubkey) throw new Error('pubkey is required');
+  const rawPubkey = cleanString(entry.pubkey, 140);
+  const pubkey = normalizePubkey(rawPubkey);
+  if (!rawPubkey) throw new Error('pubkey is required');
+  if (!pubkey) throw new Error('valid npub or 64-character hex pubkey is required');
+  const existing = (state.following.entries ?? []).find((item) => normalizePubkey(item.pubkey) === pubkey);
+  if (existing) return { ...existing, already: true };
   const item = {
     id: randomUUID(),
     pubkey,
@@ -21,11 +66,12 @@ export async function addFollowing(entry) {
   };
   state.following.entries.unshift(item);
   state.following.directory = state.following.directory ?? {};
-  state.following.directory[normalizePubkey(item.pubkey) || item.pubkey] = { pubkey: normalizePubkey(item.pubkey) || item.pubkey, npub: pubkeyToNpub(normalizePubkey(item.pubkey)), follow: { relayHint: item.relayHint, petname: item.petname, addedAt: item.addedAt }, local: { note: item.note || '', tags: [], favorite: false, hidden: false }, status: { profileFetch: 'pending', lastFetchedAt: null, error: '' } };
+  const previous = state.following.directory[pubkey] ?? {};
+  state.following.directory[pubkey] = { pubkey, npub: pubkeyToNpub(pubkey), profile: previous.profile ?? entry.profile ?? null, profileEvent: previous.profileEvent ?? null, follow: { relayHint: item.relayHint, petname: item.petname, addedAt: item.addedAt }, local: previous.local ?? { note: item.note || '', tags: [], favorite: false, hidden: false }, status: previous.status ?? { profileFetch: entry.profile ? 'ok' : 'pending', lastFetchedAt: entry.profile ? new Date().toISOString() : null, error: '' } };
   state.following.updatedAt = item.addedAt;
   state.following.event = buildCanonicalEvent(3, state.following.entries);
   state.following.truth = null;
-  addAudit(state, 'following.added', `Added ${item.petname || item.pubkey}`);
+  addAudit(state, 'following.added', `Added ${item.petname || pubkeyToNpub(pubkey) || pubkey}`);
   await saveState(state, { directory: true });
   return item;
 }
@@ -315,6 +361,86 @@ export async function discoverFollowSuggestions() {
   addAudit(state, 'following.discover', `Discovered ${suggestions.length} follow suggestions from ${mutuals.length} mutual follows`);
   await saveState(state);
   return { suggestions, mutualCount: mutuals.length };
+}
+
+function looksLikeNip05(value) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(value ?? '').trim());
+}
+
+async function resolveNip05(value, timeoutMs = 5000) {
+  const nip05 = String(value ?? '').trim().toLowerCase();
+  const [name, domain] = nip05.split('@');
+  if (!name || !domain) return { nip05, pubkey: '' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`, { signal: controller.signal, headers: { accept: 'application/json' } });
+    if (!response.ok) return { nip05, pubkey: '', error: `${response.status} ${response.statusText}` };
+    const body = await response.json();
+    const pubkey = normalizePubkey(body?.names?.[name] || body?.names?.[name.toLowerCase()]);
+    return { nip05, pubkey };
+  } catch (error) {
+    return { nip05, pubkey: '', error: error.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function addDirectoryMatches(candidates, query, directory, followed) {
+  const q = query.toLowerCase();
+  for (const row of Object.values(directory ?? {})) {
+    const pubkey = normalizePubkey(row?.pubkey);
+    if (!pubkey) continue;
+    const profile = row.profile ?? {};
+    const haystack = [row.npub, pubkey, profile.name, profile.displayName, profile.nip05, profile.about, row.follow?.petname].join(' ').toLowerCase();
+    if (!haystack.includes(q)) continue;
+    addCandidate(candidates, pubkey, { profile, profileEvent: row.profileEvent, source: 'local-cache', confidence: 'cached', followed: followed.has(pubkey), relays: row.profileEvent?.relay ? [row.profileEvent.relay] : [] });
+  }
+}
+
+function mergeProfileEvents(candidates, events, followed, source) {
+  for (const event of events ?? []) {
+    const pubkey = normalizePubkey(event.pubkey);
+    if (!pubkey) continue;
+    const existing = candidates.get(pubkey);
+    if (existing?.profileEvent && (existing.profileEvent.created_at ?? 0) > (event.created_at ?? 0)) {
+      addCandidate(candidates, pubkey, { source, followed: followed.has(pubkey), relays: [event.relay].filter(Boolean) });
+      continue;
+    }
+    addCandidate(candidates, pubkey, { profile: normalizeFollowProfile(parseJsonObject(event.content)), profileEvent: { id: event.id, created_at: event.created_at, relay: event.relay }, source, confidence: source === 'relay-search' ? 'relay-search' : 'profile', followed: followed.has(pubkey), relays: [event.relay].filter(Boolean) });
+  }
+}
+
+function addCandidate(candidates, pubkey, data = {}) {
+  const existing = candidates.get(pubkey) ?? { pubkey, sources: [], relays: [], confidence: 'candidate', followed: false };
+  const sources = new Set([...(existing.sources ?? []), data.source].filter(Boolean));
+  const relays = new Set([...(existing.relays ?? []), ...(data.relays ?? [])].filter(Boolean));
+  candidates.set(pubkey, {
+    ...existing,
+    ...data,
+    pubkey,
+    sources: [...sources],
+    relays: [...relays],
+    followed: Boolean(existing.followed || data.followed),
+    confidence: bestConfidence(existing.confidence, data.confidence)
+  });
+}
+
+function bestConfidence(a = 'candidate', b = 'candidate') {
+  const rank = { exact: 5, cached: 4, profile: 3, 'relay-search': 2, candidate: 1 };
+  return (rank[b] ?? 0) > (rank[a] ?? 0) ? b : a;
+}
+
+function candidateScore(row, query) {
+  const q = String(query ?? '').toLowerCase();
+  const profile = row.profile ?? {};
+  let score = ({ exact: 1000, cached: 800, profile: 650, 'relay-search': 500, candidate: 100 })[row.confidence] ?? 100;
+  if (row.followed) score += 75;
+  if (profile.nip05?.toLowerCase() === q) score += 220;
+  if ([profile.name, profile.displayName].some((value) => String(value ?? '').toLowerCase() === q)) score += 180;
+  if ([profile.name, profile.displayName, profile.nip05].some((value) => String(value ?? '').toLowerCase().includes(q))) score += 80;
+  score += Math.min(60, (row.relays?.length ?? 0) * 8);
+  return score;
 }
 
 function normalizeDiscoverProfile(content = {}) {

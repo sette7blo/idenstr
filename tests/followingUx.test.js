@@ -18,7 +18,7 @@ test('following section uses the same save publish scan state model as profile a
   assert.match(html, /Refresh profiles/);
   assert.match(html, /Refresh activity/);
 
-  const addForm = html.indexOf('id="follow-form"');
+  const addForm = html.indexOf('id="people-search-form"');
   const filterTools = html.indexOf('id="following-search"');
   const directoryList = html.indexOf('following-scroll-window');
   const actionBar = html.indexOf('following-action-bar');
@@ -39,6 +39,13 @@ test('following section uses the same save publish scan state model as profile a
   assert.match(html, /id="following-sort-direction"/);
   assert.match(html, /<option value="desc">Highest first<\/option>/);
   assert.match(html, /<option value="asc">Lowest first<\/option>/);
+
+  assert.match(html, /id="people-search-form"/);
+  assert.match(html, /Search people/);
+  assert.match(html, /id="people-search-results"/);
+  assert.match(app, /people\/search\?q=/);
+  assert.match(app, /data-people-add/);
+  assert.match(app, /Already following/);
 
   assert.match(app, /followingSortDirection/);
   assert.match(app, /sortFollowing\([^,]+, followingSort, followingSortDirection\)/);

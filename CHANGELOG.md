@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.4.0] — 2026-08-05
+
+- Added people search for the Following screen: search configured relays by name, resolve NIP-05 identifiers, paste npub/hex directly, review profile result cards, and add selected accounts to the local kind:3 draft with duplicate/invalid pubkey protection.
+
 ## [v1.3.0] — 2026-07-28
 
 - Added scheduled post backend support for linked apps: new `GET/POST/PUT/DELETE /api/v1/scheduled-posts` endpoints, `POST /api/v1/scheduled-posts/:id/publish-now`, scoped `schedule:read` / `schedule:write` token permissions, SQLite persistence, UTC `publish_at` execution with optional client timezone metadata, and a background worker that signs/publishes due kind:1 notes through Idenstr.
@@ -112,7 +116,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/sette7blo/idenstr/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/sette7blo/idenstr/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/sette7blo/idenstr/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/sette7blo/idenstr/compare/v1.0.2...v1.1.0

@@ -43,6 +43,17 @@ export async function fetchAuthorProfiles(pubkeys, relays, options = {}) {
   return { relays: perRelay, events };
 }
 
+export async function searchRelayProfiles(query, relays, options = {}) {
+  const uniqueRelays = [...new Set(relays.filter(Boolean))];
+  const search = String(query ?? '').trim();
+  if (!search || !uniqueRelays.length) return { relays: [], events: [] };
+  const timeoutMs = options.timeoutMs ?? 5500;
+  const limit = options.limit ?? 20;
+  const perRelay = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => fetchRelaySearchEvents(relay, search, timeoutMs, limit));
+  const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
+  return { relays: perRelay, events };
+}
+
 export async function fetchFollowRelayLists(pubkeys, relays, options = {}) {
   const uniqueRelays = [...new Set(relays.filter(Boolean))];
   const authors = [...new Set(pubkeys.filter((pubkey) => /^[0-9a-f]{64}$/i.test(pubkey)))];
@@ -198,6 +209,50 @@ async function fetchRelayEvents(relay, pubkeys, timeoutMs, kinds = [0, 3, 10002]
         if (subId !== subscriptionId) return;
         if (type === 'EVENT' && isNostrEvent(payload, pubkeys, kinds)) events.push(payload);
         if (type === 'EOSE') finish('ok');
+      });
+      socket.addEventListener('error', () => finish(events.length ? 'partial-error' : 'error', 'relay websocket error'));
+      socket.addEventListener('close', () => finish(events.length ? 'ok' : 'closed'));
+    } catch (error) {
+      finish('error', error.message);
+    }
+  });
+}
+
+async function fetchRelaySearchEvents(relay, search, timeoutMs, limit = 20) {
+  if (typeof WebSocket === 'undefined') {
+    return { relay, status: 'error', error: 'WebSocket unavailable in this Node runtime', events: [] };
+  }
+
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const events = [];
+    const subscriptionId = `idenstr-search-${Math.random().toString(36).slice(2)}`;
+    let settled = false;
+    let socket;
+
+    const finish = (status, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { socket?.close(); } catch {}
+      resolve({ relay, status, error, events, latencyMs: Date.now() - started, kinds: [0], search });
+    };
+
+    const timer = setTimeout(() => finish(events.length ? 'partial-timeout' : 'timeout'), timeoutMs);
+
+    try {
+      socket = new WebSocket(relay);
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify(['REQ', subscriptionId, { kinds: [0], search, limit }]));
+      });
+      socket.addEventListener('message', (message) => {
+        const parsed = parseRelayMessage(message.data);
+        if (!parsed) return;
+        const [type, subId, payload] = parsed;
+        if (subId !== subscriptionId) return;
+        if (type === 'EVENT' && payload?.kind === 0 && /^[0-9a-f]{64}$/i.test(payload.pubkey || '')) events.push(payload);
+        if (type === 'EOSE') finish('ok');
+        if (type === 'CLOSED') finish(events.length ? 'partial-closed' : 'closed', payload || 'subscription closed');
       });
       socket.addEventListener('error', () => finish(events.length ? 'partial-error' : 'error', 'relay websocket error'));
       socket.addEventListener('close', () => finish(events.length ? 'ok' : 'closed'));

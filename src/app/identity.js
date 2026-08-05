@@ -11,7 +11,7 @@ import { getWallet } from './wallet.js';
 
 // Re-export all domain functions for server.js
 export { getProfile, saveProfile, scanProfile, publishProfile, profileTruth, verifyNip05 } from './profile.js';
-export { getFollowing, addFollowing, removeFollowing, followAndPublish, unfollowAndPublish, saveFollowing, publishFollowing, scanFollowing, refreshFollowingProfiles, refreshFollowingProfilesStreaming, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, discoverFollowSuggestions, followDirectorySummary, followAnalyticsSummary, computeFollowAnalytics, mergeFollowActivityAnalytics, followListTruth } from './following.js';
+export { getFollowing, addFollowing, removeFollowing, followAndPublish, unfollowAndPublish, saveFollowing, publishFollowing, scanFollowing, refreshFollowingProfiles, refreshFollowingProfilesStreaming, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, discoverFollowSuggestions, searchPeople, followDirectorySummary, followAnalyticsSummary, computeFollowAnalytics, mergeFollowActivityAnalytics, followListTruth } from './following.js';
 export { getMutes, addMute, removeMute, saveMutes, publishMutes, muteAndPublish, unmuteAndPublish, muteListTags } from './mutes.js';
 export { getRelays, saveRelays, publishRelays, scanRelays, computeFollowingRelayPopularity, getPrivateRelay, savePrivateRelay, inspectPrivateRelay } from './relays.js';
 export { getBackups, createBackup, getBackupFile, restoreBackup } from './backup.js';

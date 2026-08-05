@@ -313,6 +313,15 @@ input:focus, textarea:focus, select:focus { border-color: var(--border-hot); box
 @media (max-width: 900px) { .profile-truth { grid-template-columns: 1fr; } }
 
 .follow-add-inline { margin-top: 16px; margin-bottom: 0; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
+.people-search-form { grid-template-columns: minmax(0, 1fr) auto; }
+.people-search-field { grid-column: auto; }
+.people-search-results { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: rgba(255,255,255,.025); }
+.people-search-results.empty { color: var(--dim); }
+.people-result-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) minmax(180px, 240px); gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,.03); }
+.people-result-row p { margin: 2px 0; color: var(--muted); line-height: 1.4; max-height: 3.9em; overflow: hidden; }
+.people-result-actions { display: grid; gap: 8px; align-content: start; }
+.people-result-actions input { padding: 9px 10px; font-size: 12px; }
+.people-result-actions .button { width: 100%; padding: 10px 12px; font-size: 12px; }
 .following-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; margin-top: 14px; }
 .following-cache-status { margin-top: 10px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.03); color: var(--muted); font: 800 11px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .06em; }
 .following-cache-status.ok { border-color: rgba(0,208,132,.28); color: var(--success-green); }
@@ -375,6 +384,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--border-hot); box
 .follow-load-actions .button { padding: 9px 11px; font-size: 12px; }
 @media (max-width: 900px) {
   .follow-add-inline { grid-template-columns: 1fr; }
+  .people-search-form { grid-template-columns: 1fr; }
+  .people-result-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .people-result-actions { grid-column: 1 / -1; }
   .following-tools { grid-template-columns: 1fr; }
   .following-action-bar { flex-direction: column; align-items: stretch; }
   .following-action-group { justify-content: stretch; }

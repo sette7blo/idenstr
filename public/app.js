@@ -51,7 +51,9 @@ const els = {
   profileForm: document.querySelector('#profile-form'),
   profilePublishStatus: document.querySelector('#profile-publish-status'),
   profileTruth: document.querySelector('#profile-truth'),
-  followForm: document.querySelector('#follow-form'),
+  peopleSearchForm: document.querySelector('#people-search-form'),
+  peopleSearchStatus: document.querySelector('#people-search-status'),
+  peopleSearchResults: document.querySelector('#people-search-results'),
   relayForm: document.querySelector('#relay-form'),
   views: [...document.querySelectorAll('[data-view]')],
   tabs: [...document.querySelectorAll('[data-tab]')]
@@ -1004,15 +1006,87 @@ document.querySelector('#verify-nip05').addEventListener('click', async (event) 
   });
 });
 
-els.followForm.addEventListener('submit', async (event) => {
+els.peopleSearchForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
-  await withButtonState(els.followForm.querySelector('button[type="submit"]'), async () => {
-    const payload = Object.fromEntries(new FormData(els.followForm));
-    await api('following', { method: 'POST', body: JSON.stringify(payload) });
-    els.followForm.reset();
+  const query = els.peopleSearchForm.elements.query.value.trim();
+  if (!query) return;
+  await withButtonState(els.peopleSearchForm.querySelector('button[type="submit"]'), async () => {
+    els.peopleSearchStatus.className = 'following-cache-status warn';
+    els.peopleSearchStatus.textContent = `Searching configured relays for “${query}”...`;
+    els.peopleSearchResults.className = 'people-search-results';
+    els.peopleSearchResults.textContent = 'Looking for matching profiles...';
+    const result = await api(`people/search?q=${encodeURIComponent(query)}`, { headers: { 'content-type': undefined } });
+    renderPeopleSearchResults(result);
+  });
+});
+
+els.peopleSearchResults?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-people-add]');
+  if (!button) return;
+  const pubkey = button.dataset.peopleAdd;
+  const card = button.closest('.people-result-row');
+  const petname = card?.querySelector('[data-people-petname]')?.value || button.dataset.peopleName || '';
+  const relayHint = button.dataset.peopleRelay || '';
+  await withButtonState(button, async () => {
+    const profile = peopleResultProfileFromButton(button);
+    const added = await api('following', { method: 'POST', body: JSON.stringify({ pubkey, petname, relayHint, profile }) });
+    button.textContent = added.already ? 'Already following' : 'Added';
+    button.disabled = true;
+    els.peopleSearchStatus.className = 'following-cache-status ok';
+    els.peopleSearchStatus.textContent = added.already ? 'Already in your local follow draft.' : 'Added to local follow draft. Publish kind:3 when ready.';
     await refresh();
   });
 });
+
+function peopleResultProfileFromButton(button) {
+  try {
+    return JSON.parse(button.dataset.peopleProfile || '{}');
+  } catch {
+    return null;
+  }
+}
+
+function renderPeopleSearchResults(result) {
+  const results = result.results || [];
+  els.peopleSearchStatus.className = results.length ? 'following-cache-status ok' : 'following-cache-status warn';
+  els.peopleSearchStatus.textContent = `${result.message || 'Search complete'}${result.searchedRelays ? ` · ${result.searchedRelays} relays checked` : ''}`;
+  if (!results.length) {
+    els.peopleSearchResults.className = 'people-search-results empty';
+    els.peopleSearchResults.textContent = 'No people found. Try an exact NIP-05 address, paste an npub, or add more read relays.';
+    return;
+  }
+  els.peopleSearchResults.className = 'people-search-results';
+  els.peopleSearchResults.innerHTML = results.map(renderPeopleResultRow).join('');
+}
+
+function renderPeopleResultRow(person) {
+  const profile = person.profile || {};
+  const name = profile.displayName || profile.name || profile.nip05 || person.npub || person.pubkey;
+  const subtitle = profile.nip05 || person.npub || person.pubkey;
+  const about = profile.about ? `<p>${escapeHtml(profile.about)}</p>` : '<p class="empty">No profile text found yet.</p>';
+  const avatar = profile.picture ? `<img class="discover-avatar" src="${escapeHtml(profile.picture)}" alt="${escapeHtml(name)} avatar" loading="lazy" />` : `<div class="discover-avatar fallback">${escapeHtml(String(name || '?').slice(0, 2).toUpperCase())}</div>`;
+  const relay = person.relays?.[0] || '';
+  const sources = person.sources?.length ? person.sources.join(', ') : person.confidence;
+  const profileData = escapeHtml(JSON.stringify(profile));
+  const disabled = person.followed ? 'disabled' : '';
+  const label = person.followed ? 'Already following' : 'Add follow';
+  return `
+    <div class="people-result-row">
+      ${avatar}
+      <div class="discover-main">
+        <strong>${escapeHtml(name)}</strong>
+        <small>${escapeHtml(subtitle)}</small>
+        <code>${escapeHtml(person.npub || person.pubkey)}</code>
+        ${about}
+        <div class="follow-badges"><span class="relay-status ${person.followed ? 'ok' : 'unknown'}">${person.followed ? 'already following' : escapeHtml(person.confidence || 'candidate')}</span><span>${escapeHtml(sources)}</span>${relay ? `<span>${escapeHtml(relay)}</span>` : ''}</div>
+      </div>
+      <div class="people-result-actions">
+        <input data-people-petname value="${escapeHtml(profile.displayName || profile.name || '')}" aria-label="Petname for ${escapeHtml(name)}" />
+        <button class="button ghost" type="button" data-people-add="${escapeHtml(person.pubkey)}" data-people-name="${escapeHtml(profile.displayName || profile.name || '')}" data-people-relay="${escapeHtml(relay)}" data-people-profile="${profileData}" ${disabled}>${label}</button>
+      </div>
+    </div>
+  `;
+}
 
 els.muteForm?.addEventListener('submit', async (event) => {
   event.preventDefault();

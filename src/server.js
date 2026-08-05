@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInfo } from './app/system.js';
-import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
+import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, searchPeople, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
 import { cancelScheduledPost, createScheduledPost, listScheduledPosts, publishScheduledPostNow, startScheduledPostWorker, updateScheduledPost } from './app/scheduledPosts.js';
@@ -69,6 +69,7 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/scan') return sendJson(res, 200, await scanProfile());
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/nip05/verify') return sendJson(res, 200, await verifyNip05());
   if (req.method === 'GET' && url.pathname === '/api/v1/following') return sendJson(res, 200, await getFollowing());
+  if (req.method === 'GET' && url.pathname === '/api/v1/people/search') return sendJson(res, 200, await searchPeople(url.searchParams.get('q') ?? ''));
   if (req.method === 'POST' && url.pathname === '/api/v1/following') return sendJson(res, 201, await addFollowing(await readJson(req)));
   if (req.method === 'POST' && url.pathname === '/api/v1/following/save') return sendJson(res, 200, await saveFollowing());
   if (req.method === 'POST' && url.pathname === '/api/v1/following/profiles/refresh') {
@@ -273,6 +274,7 @@ function requiredScope(method, pathname) {
   if (pathname === '/api/v1/relays') return method === 'GET' ? 'relays:read' : 'admin';
   if (pathname.startsWith('/api/v1/relays/')) return 'admin';
   if (pathname === '/api/v1/following/directory') return 'following:read';
+  if (pathname === '/api/v1/people/search') return 'admin';
   if (pathname === '/api/v1/following') return method === 'GET' ? 'following:read' : 'admin';
   // Scoped apps (e.g. Feedstr) may follow/unfollow with following:write; the heavier
   // identity operations (scan, discover, analytics, save, bulk profile refresh) stay admin.

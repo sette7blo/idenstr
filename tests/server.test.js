@@ -63,7 +63,7 @@ test('dashboard APIs expose usable identity features without nsec leakage', asyn
     const followResponse = await fetch(`${baseUrl}/api/v1/following`, {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ pubkey: 'npub1example', petname: 'example' })
+      body: JSON.stringify({ pubkey: 'a'.repeat(64), petname: 'example' })
     });
     const follow = await followResponse.json();
     assert.equal(followResponse.status, 201);
