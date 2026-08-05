@@ -52,6 +52,7 @@ const els = {
   profilePublishStatus: document.querySelector('#profile-publish-status'),
   profileTruth: document.querySelector('#profile-truth'),
   peopleSearchForm: document.querySelector('#people-search-form'),
+  peopleSearchInput: document.querySelector('#people-search-form input[name="query"]'),
   peopleSearchStatus: document.querySelector('#people-search-status'),
   peopleSearchResults: document.querySelector('#people-search-results'),
   relayForm: document.querySelector('#relay-form'),
@@ -1006,11 +1007,25 @@ document.querySelector('#verify-nip05').addEventListener('click', async (event) 
   });
 });
 
+let peopleSearchTimer;
+els.peopleSearchInput?.addEventListener('input', () => {
+  clearTimeout(peopleSearchTimer);
+  const query = els.peopleSearchInput.value.trim();
+  if (query.length < 2) return;
+  peopleSearchTimer = setTimeout(() => runPeopleSearch(query), 700);
+});
+
 els.peopleSearchForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  clearTimeout(peopleSearchTimer);
   const query = els.peopleSearchForm.elements.query.value.trim();
   if (!query) return;
-  await withButtonState(els.peopleSearchForm.querySelector('button[type="submit"]'), async () => {
+  await runPeopleSearch(query);
+});
+
+async function runPeopleSearch(query) {
+  const button = els.peopleSearchForm?.querySelector('button[type="submit"]');
+  await withButtonState(button, async () => {
     els.peopleSearchStatus.className = 'following-cache-status warn';
     els.peopleSearchStatus.textContent = `Searching configured relays for “${query}”...`;
     els.peopleSearchResults.className = 'people-search-results';
@@ -1018,7 +1033,7 @@ els.peopleSearchForm?.addEventListener('submit', async (event) => {
     const result = await api(`people/search?q=${encodeURIComponent(query)}`, { headers: { 'content-type': undefined } });
     renderPeopleSearchResults(result);
   });
-});
+}
 
 els.peopleSearchResults?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-people-add]');

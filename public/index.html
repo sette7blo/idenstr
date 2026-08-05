@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=people-search-2" />
+  <link rel="stylesheet" href="./styles.css?v=people-search-3" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -97,10 +97,10 @@
         <span class="state-seg" data-store="public">Public relays</span>
       </div>
       <form id="people-search-form" class="form-grid compact follow-add-inline people-search-form">
-        <label class="people-search-field">Find people<input name="query" required autocomplete="off" placeholder="name, NIP-05, npub, or hex pubkey" /></label>
-        <button class="button primary" type="submit">Search people</button>
+        <label class="people-search-field">Find people on Nostr<input name="query" required autocomplete="off" placeholder="Type a name like walker, then press Enter" /></label>
+        <button class="button primary people-search-button" type="submit">Search Nostr</button>
       </form>
-      <div id="people-search-status" class="following-cache-status empty">Search your configured relays, resolve NIP-05, or paste an npub directly.</div>
+      <div id="people-search-status" class="following-cache-status empty">Type at least 2 characters and press Enter, or tap Search Nostr. Idenstr searches configured relays, resolves NIP-05, and accepts npub/hex.</div>
       <div id="people-search-results" class="people-search-results empty">No search yet.</div>
       <div class="following-filter-label">Current follow list filters — this only narrows accounts you already follow.</div>
       <div class="following-tools">
@@ -357,6 +357,6 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
     </section>
   </main>
 
-  <script src="./app.js?v=people-search-2" defer></script>
+  <script src="./app.js?v=people-search-3" defer></script>
 </body>
 </html>

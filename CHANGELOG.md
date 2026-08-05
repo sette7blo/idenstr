@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.4.2] — 2026-08-05
+
+- Made people search clearer on mobile: explicit Search Nostr button, Enter-to-search instructions, auto-search after typing, and stronger cache busting.
+
 ## [v1.4.1] — 2026-08-05
 
 - Renamed the local current-follow filter so it is not confused with global Nostr people search, and bumped static asset cache keys.
@@ -120,7 +124,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.4.2...HEAD
+[v1.4.2]: https://github.com/sette7blo/idenstr/compare/v1.4.1...v1.4.2
 [v1.4.1]: https://github.com/sette7blo/idenstr/compare/v1.4.0...v1.4.1
 [v1.4.0]: https://github.com/sette7blo/idenstr/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/sette7blo/idenstr/compare/v1.2.0...v1.3.0

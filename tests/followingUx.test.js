@@ -41,7 +41,7 @@ test('following section uses the same save publish scan state model as profile a
   assert.match(html, /<option value="asc">Lowest first<\/option>/);
 
   assert.match(html, /id="people-search-form"/);
-  assert.match(html, /Search people/);
+  assert.match(html, /Search Nostr/);
   assert.match(html, /id="people-search-results"/);
   assert.match(app, /people\/search\?q=/);
   assert.match(app, /data-people-add/);
