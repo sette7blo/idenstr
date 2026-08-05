@@ -322,7 +322,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--border-hot); box
 .people-result-actions { display: grid; gap: 8px; align-content: start; }
 .people-result-actions input { padding: 9px 10px; font-size: 12px; }
 .people-result-actions .button { width: 100%; padding: 10px 12px; font-size: 12px; }
-.following-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; margin-top: 14px; }
+.following-filter-label { margin-top: 18px; color: var(--muted); font: 900 11px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.current-follow-filter { margin: 0; gap: 7px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.current-follow-filter input { margin-top: 7px; }
+.following-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: end; margin-top: 8px; }
 .following-cache-status { margin-top: 10px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.03); color: var(--muted); font: 800 11px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .06em; }
 .following-cache-status.ok { border-color: rgba(0,208,132,.28); color: var(--success-green); }
 .following-cache-status.warn { border-color: rgba(247,147,26,.28); color: var(--bitcoin-gold); }

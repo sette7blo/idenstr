@@ -11,6 +11,10 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+## [v1.4.1] — 2026-08-05
+
+- Renamed the local current-follow filter so it is not confused with global Nostr people search, and bumped static asset cache keys.
+
 ## [v1.4.0] — 2026-08-05
 
 - Added people search for the Following screen: search configured relays by name, resolve NIP-05 identifiers, paste npub/hex directly, review profile result cards, and add selected accounts to the local kind:3 draft with duplicate/invalid pubkey protection.
@@ -116,7 +120,8 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ---
 
-[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/sette7blo/idenstr/compare/v1.4.1...HEAD
+[v1.4.1]: https://github.com/sette7blo/idenstr/compare/v1.4.0...v1.4.1
 [v1.4.0]: https://github.com/sette7blo/idenstr/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/sette7blo/idenstr/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/sette7blo/idenstr/compare/v1.1.0...v1.2.0

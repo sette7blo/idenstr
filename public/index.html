@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=people-search-1" />
+  <link rel="stylesheet" href="./styles.css?v=people-search-2" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -102,8 +102,9 @@
       </form>
       <div id="people-search-status" class="following-cache-status empty">Search your configured relays, resolve NIP-05, or paste an npub directly.</div>
       <div id="people-search-results" class="people-search-results empty">No search yet.</div>
+      <div class="following-filter-label">Current follow list filters — this only narrows accounts you already follow.</div>
       <div class="following-tools">
-        <input id="following-search" placeholder="Search follows by name, npub, relay hint, about..." autocomplete="off" />
+        <label class="current-follow-filter">Filter current follows<input id="following-search" placeholder="Filter existing follows only — use Find people above to search Nostr" autocomplete="off" /></label>
         <select id="following-filter" aria-label="Filter follows">
           <option value="all">All follows</option>
           <option value="high-engagement">High engagement</option>
@@ -356,6 +357,6 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
     </section>
   </main>
 
-  <script src="./app.js?v=people-search-1" defer></script>
+  <script src="./app.js?v=people-search-2" defer></script>
 </body>
 </html>
