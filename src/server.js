@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCapabilities, getHealth, getOverview, getStackTopology, getSystemInfo } from './app/system.js';
-import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPrivateRelay, getProfile, getRelays, getWallet, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, searchPeople, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
+import { addFollowing, addMute, followAndPublish, muteAndPublish, unmuteAndPublish, unfollowAndPublish, createBackup, discoverFollowSuggestions, getBackupFile, getBackups, getDashboard, getFollowing, getFollowingDirectory, getIdentity, getMutes, getPaymentTargets, getPrivateRelay, getProfile, getRelays, getWallet, importPaymentTargetsFromRelays, inspectPrivateRelay, payInvoice, payZap, publishEvent, publishFollowing, publishMutes, publishPaymentTargets, publishProfile, publishRelays, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, refreshFollowingProfiles, refreshFollowingProfilesStreaming, removeFollowing, removeMute, restoreBackup, saveFollowing, saveMutes, savePaymentTargets, savePrivateRelay, saveProfile, saveRelays, saveWallet, scanFollowing, scanProfile, scanRelays, searchPeople, verifyNip05, walletBalance, walletInfo } from './app/identity.js';
 import { TokenStore, hasScope } from './app/tokenStore.js';
 import { authorizeAndSign } from './app/signingService.js';
 import { cancelScheduledPost, createScheduledPost, listScheduledPosts, publishScheduledPostNow, startScheduledPostWorker, updateScheduledPost } from './app/scheduledPosts.js';
@@ -68,6 +68,10 @@ async function route(req, res) {
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/publish') return sendJson(res, 200, await publishProfile());
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/scan') return sendJson(res, 200, await scanProfile());
   if (req.method === 'POST' && url.pathname === '/api/v1/profile/nip05/verify') return sendJson(res, 200, await verifyNip05());
+  if (req.method === 'GET' && url.pathname === '/api/v1/payment-targets') return sendJson(res, 200, await getPaymentTargets());
+  if (req.method === 'PUT' && url.pathname === '/api/v1/payment-targets') return sendJson(res, 200, await savePaymentTargets(await readJson(req)));
+  if (req.method === 'POST' && url.pathname === '/api/v1/payment-targets/import') return sendJson(res, 200, await importPaymentTargetsFromRelays());
+  if (req.method === 'POST' && url.pathname === '/api/v1/payment-targets/publish') return sendJson(res, 200, await publishPaymentTargets());
   if (req.method === 'GET' && url.pathname === '/api/v1/following') return sendJson(res, 200, await getFollowing());
   if (req.method === 'GET' && url.pathname === '/api/v1/people/search') return sendJson(res, 200, await searchPeople(url.searchParams.get('q') ?? ''));
   if (req.method === 'POST' && url.pathname === '/api/v1/following') return sendJson(res, 201, await addFollowing(await readJson(req)));
@@ -271,6 +275,8 @@ function requiredScope(method, pathname) {
   if (pathname === '/api/v1/tuning') return 'admin';
   if (pathname === '/api/v1/identity' || pathname === '/api/v1/profile') return method === 'GET' ? 'profile:read' : 'admin';
   if (pathname.startsWith('/api/v1/profile/')) return 'admin';
+  if (pathname === '/api/v1/payment-targets') return method === 'GET' ? 'profile:read' : 'admin';
+  if (pathname.startsWith('/api/v1/payment-targets/')) return 'admin';
   if (pathname === '/api/v1/relays') return method === 'GET' ? 'relays:read' : 'admin';
   if (pathname.startsWith('/api/v1/relays/')) return 'admin';
   if (pathname === '/api/v1/following/directory') return 'following:read';
@@ -300,7 +306,7 @@ function requiredScope(method, pathname) {
 // Sign-and-publish authorization for app tokens. Admin bypasses. Scoped tokens
 // need publish:events or publish:kind:<n>, and may not publish Idenstr-owned
 // identity kinds (those have dedicated endpoints).
-const PUBLISH_OWNED_KINDS = new Set([0, 3, 10000, 10002, 10050]);
+const PUBLISH_OWNED_KINDS = new Set([0, 3, 10000, 10002, 10050, 10133]);
 function denyPublish(principal, payload) {
   const scopes = principal?.scopes ?? [];
   if (scopes.includes('admin')) return null;

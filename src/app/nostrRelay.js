@@ -19,12 +19,15 @@ async function mapWithConcurrency(items, limit, fn) {
 export async function fetchCurrentRelayState(pubkey, relays, options = {}) {
   const uniqueRelays = [...new Set(relays.filter(Boolean))];
   const timeoutMs = options.timeoutMs ?? 4500;
-  const perRelay = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => fetchRelayEvents(relay, pubkey, timeoutMs));
+  // kind:10133 rides along with the other managed replaceable identity events so
+  // one scan answers "is my published state current on this relay" for all of them.
+  const perRelay = await mapWithConcurrency(uniqueRelays, RELAY_CONCURRENCY, (relay) => fetchRelayEvents(relay, pubkey, timeoutMs, [0, 3, 10002, 10133], 16));
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   const latest = {
     profile: newest(events.filter((event) => event.kind === 0)),
     following: newest(events.filter((event) => event.kind === 3)),
-    relayList: newest(events.filter((event) => event.kind === 10002))
+    relayList: newest(events.filter((event) => event.kind === 10002)),
+    paymentTarget: newest(events.filter((event) => event.kind === 10133))
   };
   return { relays: perRelay, latest };
 }
@@ -39,6 +42,22 @@ export async function fetchAuthorProfiles(pubkeys, relays, options = {}) {
   for (let index = 0; index < authors.length; index += batchSize) batches.push(authors.slice(index, index + batchSize));
   const jobs = uniqueRelays.flatMap((relay) => batches.map((batch) => ({ relay, batch })));
   const perRelay = await mapWithConcurrency(jobs, RELAY_CONCURRENCY, ({ relay, batch }) => fetchRelayEvents(relay, batch, timeoutMs, [0], options.limit ?? batch.length));
+  const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
+  return { relays: perRelay, events };
+}
+
+
+export async function fetchPaymentTargetEvents(pubkeys, relays, options = {}) {
+  const uniqueRelays = [...new Set(relays.filter(Boolean))];
+  const authors = [...new Set((Array.isArray(pubkeys) ? pubkeys : [pubkeys]).filter((pubkey) => /^[0-9a-f]{64}$/i.test(pubkey)))];
+  if (!authors.length || !uniqueRelays.length) return { relays: [], events: [] };
+  const timeoutMs = options.timeoutMs ?? 6500;
+  const batchSize = options.batchSize ?? 80;
+  const batches = [];
+  for (let index = 0; index < authors.length; index += batchSize) batches.push(authors.slice(index, index + batchSize));
+  const jobs = uniqueRelays.flatMap((relay) => batches.map((batch) => ({ relay, batch })));
+  const perRelay = await mapWithConcurrency(jobs, RELAY_CONCURRENCY, ({ relay, batch }) =>
+    fetchRelayEvents(relay, batch, timeoutMs, [10133], options.limit ?? Math.max(12, batch.length * 2)));
   const events = perRelay.flatMap((result) => result.events.map((event) => ({ ...event, relay: result.relay })));
   return { relays: perRelay, events };
 }

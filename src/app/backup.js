@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { getDb } from './db.js';
 import { fetchAllEvents, storeEventsLocally } from './localVault.js';
 import { addAudit, loadState, randomUUID, saveState } from './state.js';
+import { isPaymentTargetManaged, normalizePaymentTargets } from './paymentTargets.js';
 
 const BACKUP_DIR = process.env.IDENSTR_BACKUP_DIR || join(process.env.IDENSTR_STATE_STORE ? join(process.env.IDENSTR_STATE_STORE, '..') : 'data', 'backups');
 
@@ -24,6 +25,7 @@ export async function getBackups() {
         eventCount: (data.vault?.events ?? []).length,
         tokenCount: (data.tokens ?? []).length,
         vaultIncluded: Boolean(data.vault?.included),
+        paymentTargetIncluded: isPaymentTargetManaged(data.paymentTargets ?? {}),
         sizeBytes: Buffer.byteLength(raw)
       });
     } catch { /* skip corrupt files */ }
@@ -48,6 +50,9 @@ export async function createBackup() {
     profile: state.profile,
     following: state.following,
     relays: state.relays,
+    // Public NIP-A3 payment targets: the signed kind:10133 itself travels in the
+    // vault events, this keeps the canonical draft that produced it.
+    paymentTargets: state.paymentTargets,
     tuning: state.tuning,
     audit: state.audit,
     tokens,
@@ -97,6 +102,12 @@ export async function restoreBackup(data) {
   if (data.relays) {
     state.relays = data.relays;
     changes.push('relays');
+  }
+  if (data.paymentTargets) {
+    // Relay coverage is scan output, not backed-up truth: drop it so a restored
+    // identity reports its real state on the next scan.
+    state.paymentTargets = normalizePaymentTargets(data.paymentTargets);
+    changes.push(isPaymentTargetManaged(state.paymentTargets) ? 'payment targets (monero)' : 'payment targets');
   }
   if (data.tuning) {
     state.tuning = data.tuning;

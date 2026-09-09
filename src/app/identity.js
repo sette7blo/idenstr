@@ -11,6 +11,7 @@ import { getWallet } from './wallet.js';
 
 // Re-export all domain functions for server.js
 export { getProfile, saveProfile, scanProfile, publishProfile, profileTruth, verifyNip05 } from './profile.js';
+export { getPaymentTargets, savePaymentTargets, importPaymentTargetsFromRelays, publishPaymentTargets, paymentTargetTags, moneroTargetFromEvent, updateMoneroTargetTags, cleanMoneroAddress } from './paymentTargets.js';
 export { getFollowing, addFollowing, removeFollowing, followAndPublish, unfollowAndPublish, saveFollowing, publishFollowing, scanFollowing, refreshFollowingProfiles, refreshFollowingProfilesStreaming, refreshFollowingAnalytics, refreshFollowingAnalyticsStreaming, discoverFollowSuggestions, searchPeople, followDirectorySummary, followAnalyticsSummary, computeFollowAnalytics, mergeFollowActivityAnalytics, followListTruth } from './following.js';
 export { getMutes, addMute, removeMute, saveMutes, publishMutes, muteAndPublish, unmuteAndPublish, muteListTags } from './mutes.js';
 export { getRelays, saveRelays, publishRelays, scanRelays, computeFollowingRelayPopularity, getPrivateRelay, savePrivateRelay, inspectPrivateRelay } from './relays.js';
@@ -95,6 +96,7 @@ export async function getDashboard() {
     },
     relays: state.relays,
     wallet: getWallet(),
+    paymentTargets: state.paymentTargets,
     tuning: state.tuning,
     backups: await getBackups(),
     audit: state.audit.slice(0, 20)

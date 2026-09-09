@@ -39,6 +39,9 @@ const els = {
   privateRelayEvents: document.querySelector('#private-relay-events'),
   privateRelayIndicator: document.querySelector('#private-relay-indicator'),
   walletIndicator: document.querySelector('#wallet-indicator'),
+  paymentTargetsIndicator: document.querySelector('#payment-targets-indicator'),
+  paymentTargetsForm: document.querySelector('#payment-targets-form'),
+  paymentTargetsStatus: document.querySelector('#payment-targets-status'),
   walletForm: document.querySelector('#wallet-form'),
   walletStatus: document.querySelector('#wallet-status'),
   walletInfo: document.querySelector('#wallet-info'),
@@ -112,7 +115,7 @@ function setView(viewName) {
 }
 
 function render(data) {
-  const { identity, profile, following, mutes, relays, tuning, backups, audit } = data;
+  const { identity, profile, following, mutes, relays, paymentTargets, tuning, backups, audit } = data;
   if (tuning) fillTuning(tuning);
   els.liveStatus.textContent = identity.status;
   els.npubValue.textContent = identity.npub || 'No npub configured';
@@ -123,7 +126,7 @@ function render(data) {
   els.profileSummary.textContent = profile.about || 'No about text yet.';
   renderProfileBanner(profile.banner, publicName);
   renderProfileAvatar(profile.picture, publicName);
-  renderProfileContacts(profile);
+  renderProfileContacts(profile, paymentTargets);
   els.followingCount.textContent = String(following.totalCount ?? following.entries.length);
   if (els.muteCount) els.muteCount.textContent = String(mutes?.totalCount ?? mutes?.entries?.length ?? 0);
   els.relayCount.textContent = String(new Set([...relays.read, ...relays.write]).size);
@@ -137,10 +140,12 @@ function render(data) {
   if (els.privateRelayForm) els.privateRelayForm.elements.url.value = relays.private || '';
   if (els.privateRelayIndicator) els.privateRelayIndicator.textContent = relays.private ? '1' : '0';
   if (els.walletIndicator) els.walletIndicator.textContent = data.wallet?.configured ? 'connected' : 'none';
+  renderPaymentTargets(paymentTargets);
   renderStateStrip('profile', eventPresence(profile.event));
   renderStateStrip('following', eventPresence(following.event));
   renderStateStrip('mutes', eventPresence(mutes?.event));
   renderStateStrip('relays', eventPresence(relays.event));
+  renderStateStrip('payment-targets', eventPresence(paymentTargets?.event));
   renderFollowing(following.entries, following.totalCount ?? following.entries.length, following.directorySummary, following.analyticsSummary);
   renderFollowingState(following);
   renderFollowingTruth(following);
@@ -187,6 +192,7 @@ function vaultKindMeta(kind) {
     6: { name: 'Reposts', tag: 'kind:6' },
     7: { name: 'Reactions', tag: 'kind:7' },
     10002: { name: 'Relay list', tag: 'kind:10002' },
+    10133: { name: 'Payment targets', tag: 'kind:10133' },
     33401: { name: 'Exercise template', tag: 'kind:33401' },
     33402: { name: 'Workout template', tag: 'kind:33402' }
   })[kind] || { name: `Kind ${kind}`, tag: `kind:${kind}` };
@@ -231,9 +237,10 @@ function renderPrivateRelayEvents(result) {
   box.innerHTML = `${head}<div class="vault-event-list">${rows}</div>`;
 }
 
-function renderProfileContacts(profile) {
+function renderProfileContacts(profile, paymentTargets = {}) {
   const parts = [];
   if (profile.lud16) parts.push(`<span class="contact"><small>zap</small>${escapeHtml(profile.lud16)}</span>`);
+  if (paymentTargets?.moneroAddress) parts.push(`<span class="contact monero-contact"><small>xmr</small>${escapeHtml(paymentTargets.moneroAddress)}</span>`);
   if (profile.nip05) {
     const status = profile.nip05Check?.status;
     const badge = status === 'verified'
@@ -823,7 +830,9 @@ function tierClass(tier) {
 
 function relayStatus(scan) {
   if (!scan) return { className: 'unknown', label: 'not scanned', detail: 'Scan to check connectivity and current identity events.' };
-  const detail = `profile ${scan.profile}, following ${scan.following}, relay list ${scan.relayList}${Number.isFinite(scan.latencyMs) ? ` · ${scan.latencyMs}ms` : ''}${scan.error ? ` · ${scan.error}` : ''}`;
+  // kind:10133 is optional, so it only joins the line once a target is managed.
+  const monero = scan.paymentTarget && scan.paymentTarget !== 'none' ? `, monero target ${scan.paymentTarget}` : '';
+  const detail = `profile ${scan.profile}, following ${scan.following}, relay list ${scan.relayList}${monero}${Number.isFinite(scan.latencyMs) ? ` · ${scan.latencyMs}ms` : ''}${scan.error ? ` · ${scan.error}` : ''}`;
   if (scan.status === 'ok') return { className: 'ok', label: 'ok', detail };
   if (scan.status?.startsWith('partial')) return { className: 'warn', label: scan.status, detail };
   return { className: 'bad', label: scan.status || 'error', detail };
@@ -915,6 +924,48 @@ function renderAudit(audit) {
   `).join('');
 }
 
+
+function renderPaymentTargets(paymentTargets = {}) {
+  if (els.paymentTargetsIndicator) els.paymentTargetsIndicator.textContent = paymentTargets?.moneroAddress ? 'set' : 'none';
+  if (els.paymentTargetsForm) fillForm(els.paymentTargetsForm, paymentTargets || {});
+  if (!els.paymentTargetsStatus) return;
+  const event = paymentTargets?.event || {};
+  const lines = [];
+  if (event.status === 'published' || event.status === 'publish-attempted') {
+    const results = event.relayResults || [
+      ...(event.acceptedRelays || []).map((relay) => ({ relay, accepted: true, status: 'accepted' })),
+      ...(event.rejectedRelays || []).map((row) => ({ ...row, accepted: false }))
+    ];
+    lines.push(formatPublishLog(event.id, results, 'kind:10133 Monero payment target', event.localVault));
+  } else if (paymentTargets?.moneroAddress) {
+    const imported = paymentTargets.importedAt ? ` Imported ${new Date(paymentTargets.importedAt).toLocaleString()}.` : '';
+    lines.push(`Local kind:10133 draft contains a public Monero target.${imported} Publish to write relays when ready.`);
+  } else {
+    lines.push('No Monero payment target saved. Fetch from relays to import an existing public target, or enter an address and save.');
+  }
+  const coverage = formatPaymentTargetCoverage(paymentTargets?.relayStatus);
+  if (coverage) lines.push(coverage);
+  els.paymentTargetsStatus.textContent = lines.join('\n\n');
+}
+
+// Only speaks up once a Monero target is managed and a relay scan has run: an
+// identity without a payment target stays quiet.
+function formatPaymentTargetCoverage(relayStatus) {
+  if (!relayStatus?.relays?.length) return '';
+  if (!relayStatus.managed) {
+    // Not a warning: no payment target is a healthy state. This only points at
+    // an existing public event so it can be imported instead of overwritten.
+    return relayStatus.publishedElsewhere
+      ? `Scan found a published kind:10133 on ${relayStatus.publishedElsewhere} of ${relayStatus.relays.length} relays. Fetch from relays to manage it here.`
+      : '';
+  }
+  const checked = relayStatus.checkedAt ? ` (scanned ${new Date(relayStatus.checkedAt).toLocaleString()})` : '';
+  const head = `Relay coverage${checked}: ${relayStatus.current}/${relayStatus.relays.length} current, ${relayStatus.stale} stale, ${relayStatus.missing} missing, ${relayStatus.unknown} unreachable.`;
+  const needsRepair = relayStatus.relays.filter((row) => row.state === 'stale' || row.state === 'missing').map((row) => `${row.url} · ${row.state}`);
+  if (!needsRepair.length) return head;
+  return [head, 'Publish Monero target again to repair:', ...needsRepair].join('\n');
+}
+
 function renderProfilePublishStatus(profile) {
   const event = profile.event || {};
   if (event.status === 'published' || event.status === 'publish-attempted') {
@@ -970,6 +1021,43 @@ async function withButtonState(button, fn) {
     }, 1100);
   }
 }
+
+
+
+els.paymentTargetsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await withButtonState(els.paymentTargetsForm.querySelector('button[type="submit"]'), async () => {
+    const payload = Object.fromEntries(new FormData(els.paymentTargetsForm));
+    const saved = await api('payment-targets', { method: 'PUT', body: JSON.stringify(payload) });
+    renderPaymentTargets(saved);
+    els.paymentTargetsStatus.textContent = saved.moneroAddress
+      ? 'Local kind:10133 Monero target draft saved. Nothing was published.'
+      : 'Local kind:10133 Monero target cleared. Publish to remove the public Monero target from replaceable relay state.';
+    await refresh();
+  });
+});
+
+document.querySelector('#publish-payment-targets')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.paymentTargetsStatus.textContent = 'Signing kind:10133 and publishing the Monero payment target to write relays...';
+    const result = await api('payment-targets/publish', { method: 'POST' });
+    els.paymentTargetsStatus.textContent = formatPublishLog(result.published.event.id, result.published.results, 'kind:10133 Monero payment target');
+    await refresh();
+  });
+});
+
+document.querySelector('#import-payment-targets')?.addEventListener('click', async (event) => {
+  await withButtonState(event.currentTarget, async () => {
+    els.paymentTargetsStatus.textContent = 'Fetching latest kind:10133 Monero target from configured public relays...';
+    const result = await api('payment-targets/import', { method: 'POST' });
+    renderPaymentTargets(result.paymentTargets);
+    els.paymentTargetsStatus.textContent = result.found
+      ? 'Imported existing public Monero payment target into the local draft.'
+      : 'No public Monero payment target found on configured relays.';
+    await refresh();
+  });
+});
+
 
 els.profileForm.addEventListener('submit', async (event) => {
   event.preventDefault();
