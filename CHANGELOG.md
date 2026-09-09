@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`
 
 ## [Unreleased]
 
+- Added public **Monero payment targets** (NIP-A3 `kind:10133`): set a public Monero receive address in Profile, and Idenstr signs it as `["payto", "monero", "<address>"]`, stores it in the private relay vault, and publishes it to your write relays. Unrelated payment targets on the event are preserved, and `xmr` targets are normalized to `monero` on write.
+- Payment targets are now managed like the other replaceable identity events: the relay scan reports the Monero target as current, stale, missing, or unreachable per relay, backups include the canonical target, and restore brings it back. Identities without a Monero target report nothing — `kind:10133` stays optional.
+
 ## [v1.4.2] — 2026-08-05
 
 - Made people search clearer on mobile: explicit Search Nostr button, Enter-to-search instructions, auto-search after typing, and stronger cache busting.

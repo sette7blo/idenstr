@@ -2,6 +2,7 @@ import { fetchCurrentRelayState, fetchFollowRelayLists, publishEventToRelays } f
 import { signNostrEvent } from './nostrSigner.js';
 import { addAudit, buildCanonicalEvent, cleanString, DEFAULT_TUNING, getRequiredPubkey, loadState, normalizeRelays, normalizeRelayUrl, normalizePubkey, saveState } from './state.js';
 import { fetchAllEvents, storeEventLocally } from './localVault.js';
+import { isPaymentTargetManaged, paymentTargetRelayState, paymentTargetRelayStatus } from './paymentTargets.js';
 import { updateEnvVar } from './envFile.js';
 
 export async function getRelays() {
@@ -42,6 +43,7 @@ export async function saveRelays(relays) {
   state.relays.scan = [];
   state.relays.consistency = null;
   state.relays.popularity = null;
+  if (state.paymentTargets) state.paymentTargets = { ...state.paymentTargets, relayStatus: null };
   if (state.profile?.truth) state.profile.truth = null;
   if (state.profile?.event?.relayResults) {
     state.profile.event = buildCanonicalEvent(0, state.profile);
@@ -198,12 +200,17 @@ export async function scanRelays() {
   const relayState = await fetchCurrentRelayState(getRequiredPubkey(), all);
   const followPubkeys = state.following.entries.map((entry) => normalizePubkey(entry.pubkey)).filter(Boolean);
   const followRelayState = await fetchFollowRelayLists(followPubkeys, all, { timeoutMs: 7500 });
-  state.relays.scan = scanRows(relayState.relays);
+  state.relays.scan = scanRows(relayState.relays, state.paymentTargets);
   state.relays.consistency = relayListConsistency(state.relays, relayState.latest.relayList);
   state.relays.popularity = computeFollowingRelayPopularity(state.relays, state.following.entries, followRelayState.events, followRelayState.relays, state.tuning);
-  addAudit(state, 'relays.scanned', `Scanned ${all.length} configured public relays and checked relay lists for ${followPubkeys.length} follows`);
+  const paymentTargetStatus = paymentTargetRelayStatus(state.paymentTargets, relayState.relays);
+  state.paymentTargets = { ...state.paymentTargets, relayStatus: paymentTargetStatus };
+  const paymentTargetNote = paymentTargetStatus.managed
+    ? `, kind:10133 payment target current on ${paymentTargetStatus.current}/${paymentTargetStatus.relays.length}`
+    : '';
+  addAudit(state, 'relays.scanned', `Scanned ${all.length} configured public relays and checked relay lists for ${followPubkeys.length} follows${paymentTargetNote}`);
   await saveState(state);
-  return { scan: state.relays.scan, consistency: state.relays.consistency, popularity: state.relays.popularity };
+  return { scan: state.relays.scan, consistency: state.relays.consistency, popularity: state.relays.popularity, paymentTargets: paymentTargetStatus };
 }
 
 export function computeFollowingRelayPopularity(localRelays, followingEntries = [], relayListEvents = [], sourceRelayResults = [], tuning = null) {
@@ -286,14 +293,18 @@ function sameSet(a, b) {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-function scanRows(results) {
+function scanRows(results, paymentTargets = {}) {
   const scannedAt = new Date().toISOString();
+  const paymentTargetManaged = isPaymentTargetManaged(paymentTargets);
   return results.map((result) => ({
     url: result.relay,
     status: result.status,
     profile: result.events.some((event) => event.kind === 0) ? 'found' : 'missing',
     following: result.events.some((event) => event.kind === 3) ? 'found' : 'missing',
     relayList: result.events.some((event) => event.kind === 10002) ? 'found' : 'missing',
+    // 'none' while no payment target is managed, so an identity without one is
+    // never reported as missing anything.
+    paymentTarget: paymentTargetManaged ? paymentTargetRelayState(paymentTargets, result) : 'none',
     eventCount: result.events.length,
     latencyMs: result.latencyMs,
     error: result.error,

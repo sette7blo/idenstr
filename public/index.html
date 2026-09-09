@@ -13,7 +13,7 @@
   <link rel="icon" type="image/x-icon" href="./favicon.ico" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=people-search-3" />
+  <link rel="stylesheet" href="./styles.css?v=monero-payments-3" />
   <style>body{margin:0;background:#040208;color:#f4efff;font-family:Inter,system-ui,sans-serif}.topbar,.panel{background:rgba(18,12,31,.86);border:1px solid rgba(188,151,255,.18)}.topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;padding:calc(34px + env(safe-area-inset-top)) clamp(18px,4vw,56px) 18px}main{width:min(1180px,calc(100% - 32px));margin:0 auto}.hero{padding:56px 0 28px}h1{font-size:clamp(40px,8vw,82px);line-height:.92}.panel{border-radius:22px;padding:20px;margin:14px 0}.button{display:inline-block;padding:12px 16px;border-radius:12px;background:#7c3cff;color:#fff;text-decoration:none;font-weight:800}</style>
 </head>
 <body>
@@ -53,6 +53,7 @@
       <div class="card-group-label">Settings<small>How this server runs</small></div>
       <section class="main-grid">
         <article class="panel metric"><span class="metric-label">Wallet</span><strong id="wallet-indicator">—</strong><p>Connect a lightning wallet over NWC to read balance and pay invoices.</p><a href="#wallet" data-tab="wallet">Open wallet</a></article>
+        <article class="panel metric"><span class="metric-label">Monero</span><strong id="payment-targets-indicator">—</strong><p>Publish a public NIP-A3 Monero payment target for compatible Nostr clients.</p><a href="#profile" data-tab="profile">Set address</a></article>
         <article class="panel metric"><span class="metric-label">Connected apps</span><strong id="token-count">—</strong><p>Scoped tokens that let your other *str apps act through this identity.</p><a href="#tokens" data-tab="tokens">Manage access</a></article>
         <article class="panel metric"><span class="metric-label">Backups</span><strong id="backup-count">0</strong><p>One file bundling your app database and private relay vault; nsec excluded.</p><a href="#backups" data-tab="backups">Backup state</a></article>
         <article class="panel metric"><span class="metric-label">Activity log</span><strong id="audit-count">0</strong><p>Recent signing, publishing, and config actions on this server.</p><a href="#audit" data-tab="audit">View log</a></article>
@@ -84,6 +85,20 @@
         <button class="button ghost" type="button" id="verify-nip05">Verify NIP-05</button>
       </form>
       <div id="profile-publish-status" class="terminal-mini">Save stores a private kind:0 draft in the app database. Publish signs it server-side, writes it to your private relay, then pushes it to your public write relays.</div>
+      <div class="subsection-head"><span>Public Monero payment target</span><small>NIP-A3 kind:10133</small></div>
+      <p class="section-help">Publish a public Monero receive address as <code>[&quot;payto&quot;, &quot;monero&quot;, &quot;address&quot;]</code> so Amethyst and other compatible Nostr clients can show a Monero tip option. Use a fresh subaddress. This is public metadata, like your profile.</p>
+      <div class="state-strip" data-strip="payment-targets" aria-label="Where this Monero payment target currently lives">
+        <span class="state-seg" data-store="draft">Draft</span>
+        <span class="state-seg" data-store="private">Private relay</span>
+        <span class="state-seg" data-store="public">Public relays</span>
+      </div>
+      <form id="payment-targets-form" class="form-grid">
+        <label class="span-2">Monero address<input name="moneroAddress" autocomplete="off" placeholder="8... or 4..." /><small>Only valid standard, subaddress, or integrated Monero addresses are saved. Leave blank to clear the published Monero target.</small></label>
+        <button class="button primary" type="submit">Save draft</button>
+        <button class="button ghost" type="button" id="publish-payment-targets">Publish Monero target</button>
+        <button class="button ghost" type="button" id="import-payment-targets">Fetch from relays</button>
+      </form>
+      <div id="payment-targets-status" class="terminal-mini">Fetch from relays to import an existing public Monero target, or save and publish a new one.</div>
       <div class="subsection-head"><span>Profile truth</span><small>Local profile vs published relay state</small></div>
       <div id="profile-truth" class="profile-truth empty">Run scan to compare local profile against public relays.</div>
     </section>
@@ -357,6 +372,6 @@ apps: Feedstr filters feeds, threads, and notifications from this list</div>
     </section>
   </main>
 
-  <script src="./app.js?v=people-search-3" defer></script>
+  <script src="./app.js?v=monero-payments-3" defer></script>
 </body>
 </html>

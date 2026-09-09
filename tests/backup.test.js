@@ -4,6 +4,10 @@ import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { TokenStore } from '../src/app/tokenStore.js';
+import { savePaymentTargets } from '../src/app/paymentTargets.js';
+import { loadState } from '../src/app/state.js';
+
+const VALID_XMR = `8${'A'.repeat(94)}`;
 
 async function withTempEnv(env, fn) {
   const previous = new Map(Object.keys(env).map((key) => [key, process.env[key]]));
@@ -90,5 +94,64 @@ test('v1 backups still restore and unknown versions are rejected', async () => {
     const result = await restoreBackup({ app: 'idenstr', version: 1, profile: { name: 'legacy' } });
     assert.ok(result.restored.includes('profile'));
     await assert.rejects(() => restoreBackup({ app: 'idenstr', version: 3 }), /v1 or v2/);
+  });
+});
+
+test('backups carry the Monero payment target through export and restore', async () => {
+  const sourceDir = await mkdtemp(join(tmpdir(), 'idenstr-xmr-backup-src-'));
+  const targetDir = await mkdtemp(join(tmpdir(), 'idenstr-xmr-backup-dst-'));
+  let backupData;
+  await withTempEnv({
+    IDENSTR_DB_STORE: join(sourceDir, 'idenstr.db'),
+    IDENSTR_STATE_STORE: '',
+    IDENSTR_BACKUP_DIR: join(sourceDir, 'backups'),
+    IDENSTR_PRIVATE_RELAY_URL: ''
+  }, async () => {
+    await savePaymentTargets({ moneroAddress: VALID_XMR });
+    const { createBackup, getBackups } = await freshBackupModule();
+    await createBackup();
+    const listed = await getBackups();
+    assert.equal(listed[0].paymentTargetIncluded, true);
+    const files = await readdir(join(sourceDir, 'backups'));
+    backupData = JSON.parse(await readFile(join(sourceDir, 'backups', files[0]), 'utf8'));
+    assert.equal(backupData.paymentTargets.moneroAddress, VALID_XMR);
+    assert.equal(backupData.paymentTargets.event.kind, 10133);
+    assert.equal(Object.hasOwn(backupData, 'nsec'), false);
+  });
+  await withTempEnv({
+    IDENSTR_DB_STORE: join(targetDir, 'idenstr.db'),
+    IDENSTR_STATE_STORE: '',
+    IDENSTR_BACKUP_DIR: join(targetDir, 'backups'),
+    IDENSTR_PRIVATE_RELAY_URL: ''
+  }, async () => {
+    const { restoreBackup } = await freshBackupModule();
+    const result = await restoreBackup(backupData);
+    assert.ok(result.restored.includes('payment targets (monero)'));
+    const state = await loadState();
+    assert.equal(state.paymentTargets.moneroAddress, VALID_XMR);
+    assert.deepEqual(state.paymentTargets.event.kind, 10133);
+    // Relay coverage is scan output, never restored truth.
+    assert.equal(state.paymentTargets.relayStatus, undefined);
+  });
+});
+
+test('a backup taken without a Monero target restores cleanly and stays unmanaged', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'idenstr-xmr-backup-none-'));
+  await withTempEnv({
+    IDENSTR_DB_STORE: join(tempDir, 'idenstr.db'),
+    IDENSTR_STATE_STORE: '',
+    IDENSTR_BACKUP_DIR: join(tempDir, 'backups'),
+    IDENSTR_PRIVATE_RELAY_URL: ''
+  }, async () => {
+    const { createBackup, getBackups, restoreBackup } = await freshBackupModule();
+    await createBackup();
+    const listed = await getBackups();
+    assert.equal(listed[0].paymentTargetIncluded, false);
+    const files = await readdir(join(tempDir, 'backups'));
+    const data = JSON.parse(await readFile(join(tempDir, 'backups', files[0]), 'utf8'));
+    const result = await restoreBackup(data);
+    assert.ok(result.restored.includes('payment targets'));
+    const state = await loadState();
+    assert.equal(state.paymentTargets.moneroAddress, '');
   });
 });

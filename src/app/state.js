@@ -61,6 +61,7 @@ function defaultState() {
     following: { entries: [], directory: {}, directoryUpdatedAt: null, updatedAt: now, event: buildCanonicalEvent(3, []) },
     mutes: { entries: [], updatedAt: now, event: buildCanonicalEvent(10000, []) },
     relays: { read, write, dm, private: privateRelayUrl() || null, updatedAt: now, event: buildCanonicalEvent(10002, { read, write }), dmEvent: buildCanonicalEvent(10050, { dm }), scan: [] },
+    paymentTargets: { moneroAddress: '', extraTags: [], updatedAt: now, importedAt: null, sourceEvent: null, event: buildCanonicalEvent(10133, []) },
     tuning: { ...DEFAULT_TUNING },
     audit: [{ at: now, type: 'system.ready', message: 'Idenstr local vault initialized' }]
   };
@@ -68,7 +69,7 @@ function defaultState() {
 
 function mergeDefaults(state) {
   const defaults = defaultState();
-  return { ...defaults, ...state, mutes: { ...defaults.mutes, ...(state.mutes ?? {}) }, relays: { ...defaults.relays, ...(state.relays ?? {}) }, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
+  return { ...defaults, ...state, mutes: { ...defaults.mutes, ...(state.mutes ?? {}) }, relays: { ...defaults.relays, ...(state.relays ?? {}) }, paymentTargets: { ...defaults.paymentTargets, ...(state.paymentTargets ?? {}) }, tuning: { ...defaults.tuning, ...state.tuning }, audit: state.audit ?? [] };
 }
 
 export function buildCanonicalEvent(kind, content) {
